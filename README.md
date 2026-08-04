@@ -24,7 +24,7 @@ The installer is unsigned, so SmartScreen will warn on first run
 npm install
 
 npm run dev        # Vite (port 5175) + Electron with devtools
-npm run dist       # -> release/YMI Image Toolkit Setup 0.1.0.exe
+npm run dist       # -> release/YMI Image Toolkit Setup <version>.exe
 npm run dist:dir   # -> release/win-unpacked/YMI Image Toolkit.exe (no installer)
 npm run icon       # re-rasterise build/icon.svg -> icon.png + multi-size icon.ico
 ```
@@ -42,7 +42,8 @@ Close the running app before `npm run dist` — Windows keeps a lock on
 | Writes | **WebP, PNG, JPEG** |
 | Input | drag & drop files *or folders* (recursive, max depth 8), or the Add buttons |
 | Batch | 3 conversions in flight, per-file result and size delta, cancellable |
-| Selection | per-row checkbox + select-all; selected rows can be downloaded, removed, or narrow what Convert acts on |
+| Selection | per-row checkbox + select-all; selected rows can be downloaded, removed, or narrow what Convert acts on. With nothing selected, Convert means everything |
+| Naming | each row's title *is* its download name — click to rename it. The extension follows the output format and is not editable |
 | Resize | none / percentage (up- or downscale) / fit within a W x H box, Lanczos 3 |
 | Alpha | preserved for WebP + PNG; flattened onto a chosen colour for JPEG |
 | Metadata | EXIF stripped by default, ICC colour profile always kept |
@@ -55,6 +56,10 @@ batch. Each converted row grows a **Download** button, and selected rows can be
 downloaded together from the selection bar. One image gets a Save-As dialog (name
 included), several get a single folder picker; never a dialog per file. The last chosen
 folder becomes the next download's default.
+
+Download names come from `src/lib/naming.js`: source stem + the "Name suffix" setting,
+unless the row was renamed — a manual name wins and is never suffixed again. Renaming
+only ever affects the output; the source file is untouched.
 
 Staged results are **copied**, not moved, so the same conversion can be downloaded more
 than once (different folders, different names). Staging is cleared when the app quits,
@@ -79,9 +84,9 @@ electron/imageOps.cjs   the whole image pipeline (plain Node + sharp, no Electro
 electron/main.cjs       window + IPC handlers; every handler returns {ok:true,...} | {ok:false,error}
 electron/preload.cjs    contextBridge surface -> window.imageToolkit
 build/icon.svg          app icon source; build/make-icon.mjs rasterises it
-src/App.jsx             file list state, selection, batch orchestration, drag & drop
-src/components/         SettingsPanel, FileRow, SelectionBar, Checkbox, WindowControls
-src/lib/                formatBytes / deltaPercent, runPool
+src/App.jsx             file list state, selection, renaming, batch orchestration, drag & drop
+src/components/         SettingsPanel, FileRow, EditableName, SelectionBar, Checkbox, WindowControls
+src/lib/                naming rules, formatBytes / deltaPercent, runPool
 ```
 
 Three rules that keep this clean as it grows:
@@ -123,18 +128,21 @@ through `webUtils.getPathForFile` in the preload — that is the only supported 
 
 Two harnesses were used during the build (both throwaway, kept out of the repo):
 
-* **Headless pipeline** (plain Node against `imageOps.cjs`) — 26 checks: folder
+* **Headless pipeline** (plain Node against `imageOps.cjs`) — 34 checks: folder
   recursion + non-image filtering, thumbnail/probe output, staging isolation (nothing
   reaches the destination before the download, and a discarded run leaves no trace),
   JPEG->WebP, alpha PNG->WebP (alpha kept), alpha PNG->JPEG (flattened onto the picked
   colour, verified by sampling a pixel), WebP->PNG, 50% / 200% scaling, fit-box with
   and without upscaling, both no-overwrite-source guards, Save-As honouring an exact
-  filename, collision counter, downloading the same conversion twice, and lossless WebP
-  proven by pixel-identical round trip.
-* **Headless Electron** (hidden BrowserWindow on the built `dist/`) — 26 checks driving
+  filename, collision counter, downloading the same conversion twice, lossless WebP
+  proven by pixel-identical round trip, and the output-naming rules (suffix vs. manual
+  rename, typed extensions stripped, illegal characters removed, spaces kept).
+* **Headless Electron** (hidden BrowserWindow on the built `dist/`) — 32 checks driving
   the real UI with native clicks: renderer mounts, preload bridge exposed, glass blur
   computed live, page transparent for the acrylic, the three frameless window buttons
-  reach main, Add images populates rows with checkboxes, Convert stages all three
+  reach main, Add images populates rows with checkboxes, Convert is live and reads
+  "Convert all (3)" with nothing selected, renaming a row through the real input flows
+  all the way into the Save-As default and the file on disk, Convert stages all three
   *without* a dialog, per-row Download asks Save-As once, bulk Download asks a folder
   once, statuses and the unsaved counter track correctly, and removing rows deletes
   their staged files.

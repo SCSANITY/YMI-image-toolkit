@@ -1,6 +1,6 @@
 {
   "name": "ymi-image-toolkit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Standalone Windows desktop app for batch image format conversion (PNG / JPEG / WebP) and resizing.",
   "author": "YMI",

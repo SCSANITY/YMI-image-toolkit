@@ -5,6 +5,7 @@ import SelectionBar from './components/SelectionBar.jsx'
 import WindowControls from './components/WindowControls.jsx'
 import { formatBytes } from './lib/format.js'
 import { runPool } from './lib/pool.js'
+import { outputExtFor, outputNameFor, outputStemFor, sanitizeStem } from './lib/naming.js'
 
 const api = window.imageToolkit
 const SETTINGS_KEY = 'ymi-image-toolkit-settings'
@@ -35,8 +36,10 @@ export default function App() {
   const cancelRef = useRef(false)
   const settingsRef = useRef(null)
   const filesRef = useRef(files)
+  const formatsRef = useRef(null)
   settingsRef.current = settings
   filesRef.current = files
+  formatsRef.current = defaults?.outputFormats
 
   /** Staged files are real temp files; dropping a row has to drop its bytes too. */
   const discardStagedFor = useCallback((rows) => {
@@ -145,6 +148,22 @@ export default function App() {
     setNotice('')
   }, [discardStagedFor])
 
+  /**
+   * Renaming a row changes what its download is called — never the source file. An empty
+   * or illegal-only name is ignored so a row can't end up nameless.
+   */
+  const renameRow = useCallback((id, rawStem) => {
+    setFiles((prev) =>
+      prev.map((f) => {
+        if (f.id !== id) return f
+        const ext = outputExtFor(f, settingsRef.current, formatsRef.current)
+        const stem = sanitizeStem(rawStem, ext)
+        if (!stem || stem === outputStemFor(f, settingsRef.current)) return f
+        return { ...f, customStem: stem }
+      })
+    )
+  }, [])
+
   // ── selection ──────────────────────────────────────────────────────────────
   const toggleSelect = useCallback((id) => {
     setSelected((prev) => {
@@ -209,7 +228,11 @@ export default function App() {
 
   // ── downloading ────────────────────────────────────────────────────────────
   const downloadRows = useCallback(async (rows) => {
-    const items = rows.filter((r) => r.staged).map((r) => r.staged)
+    // The staged file keeps its original temp name; what the user sees in the list is
+    // what the download is called.
+    const items = rows
+      .filter((r) => r.staged)
+      .map((r) => ({ ...r.staged, suggestedName: outputNameFor(r, settingsRef.current, formatsRef.current) }))
     if (!items.length) {
       setNotice('Convert those images first — there is nothing to download yet.')
       return
@@ -283,11 +306,13 @@ export default function App() {
   }
 
   const selectedDownloadable = selectedRows.filter((f) => f.staged).length
+  // Spell out that no selection means "everything" — a bare count reads like it needs one.
   const actionLabel =
     phase === 'converting' ? 'Converting…'
       : phase === 'saving' ? 'Choosing…'
         : selected.size ? `Convert ${convertible.length} selected`
-          : `Convert ${convertible.length || ''}`.trim()
+          : convertible.length ? `Convert all (${convertible.length})`
+            : 'Convert'
 
   return (
     <div
@@ -343,7 +368,10 @@ export default function App() {
                   key={file.id}
                   file={file}
                   selected={selected.has(file.id)}
+                  outputStem={outputStemFor(file, settings)}
+                  outputExt={outputExtFor(file, settings, defaults.outputFormats)}
                   disabled={busy}
+                  onRename={renameRow}
                   onToggleSelect={toggleSelect}
                   onRemove={(id) => dropRows([id])}
                   onDownload={downloadOne}

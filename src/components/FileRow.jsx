@@ -1,5 +1,6 @@
 import React from 'react'
 import Checkbox from './Checkbox.jsx'
+import EditableName from './EditableName.jsx'
 import { formatBytes, formatDelta, deltaPercent } from '../lib/format.js'
 
 const STATUS_LABEL = {
@@ -12,7 +13,7 @@ const STATUS_LABEL = {
   error: 'Failed',
 }
 
-export default function FileRow({ file, selected, onToggleSelect, onRemove, onDownload, onReveal, disabled }) {
+export default function FileRow({ file, selected, outputStem, outputExt, onRename, onToggleSelect, onRemove, onDownload, onReveal, disabled }) {
   const out = file.staged
   const pct = out ? deltaPercent(out.inBytes, out.outBytes) : 0
 
@@ -25,7 +26,13 @@ export default function FileRow({ file, selected, onToggleSelect, onRemove, onDo
       </div>
 
       <div className="row-main">
-        <div className="row-name" title={file.path}>{file.name}</div>
+        <EditableName
+          stem={outputStem}
+          ext={outputExt}
+          disabled={disabled}
+          title={`Source: ${file.path}\nClick to rename the download`}
+          onCommit={(stem) => onRename(file.id, stem)}
+        />
         <div className="row-meta">
           {file.status === 'probing' ? (
             <span>reading…</span>
@@ -33,6 +40,13 @@ export default function FileRow({ file, selected, onToggleSelect, onRemove, onDo
             <span className="err">{file.error}</span>
           ) : (
             <>
+              {file.customStem ? (
+                <>
+                  {/* Once renamed, the title no longer says which file this came from. */}
+                  <span className="from" title={file.path}>from {file.name}</span>
+                  <span className="dot">·</span>
+                </>
+              ) : null}
               <span>{file.width}×{file.height}</span>
               <span className="dot">·</span>
               <span className="tag">{(file.format || '').toUpperCase()}</span>

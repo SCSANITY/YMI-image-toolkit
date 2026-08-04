@@ -236,6 +236,7 @@ export default function SettingsPanel({ settings, outputFormats, disabled, onCha
             onChange={(e) => setOutput({ suffix: e.target.value })}
           />
         </label>
+        <p className="hint">Applies to every download name. Renaming a row in the list overrides it.</p>
         <Toggle
           label="Replace existing"
           hint="Multi-image downloads only. Off = a -1, -2… counter is appended"
