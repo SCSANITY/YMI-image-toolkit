@@ -169,6 +169,12 @@ lifted to a web page as-is. A real web build means swapping the engine for WASM 
 downloads going through the File System Access API and a ZIP fallback. Near-parity is
 achievable; TIFF input and ICC preservation are what would be lost.
 
+---
+
+## License
+
+[MIT](LICENSE).
+
 **Other candidates**, in rough order of value: AVIF output, animated WebP/GIF
 (currently only the first frame is read — the row shows a "N frames - first only"
 badge), crop / trim transparent borders, watermarking, side-by-side quality preview
