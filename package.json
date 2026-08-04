@@ -1,0 +1,63 @@
+{
+  "name": "ymi-image-toolkit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone Windows desktop app for batch image format conversion (PNG / JPEG / WebP) and resizing.",
+  "author": "YMI",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"vite --configLoader native\" \"wait-on tcp:5175 && electron .\"",
+    "build:web": "vite build --configLoader native",
+    "build": "npm run build:web",
+    "dist": "npm run build:web && electron-builder --win nsis",
+    "dist:dir": "npm run build:web && electron-builder --win dir",
+    "icon": "node build/make-icon.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "sharp": "^0.34.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.1.0",
+    "concurrently": "^9.2.1",
+    "electron": "^38.3.0",
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^3.0.2",
+    "vite": "^7.1.12",
+    "wait-on": "^8.0.5"
+  },
+  "build": {
+    "appId": "com.ymi.image-toolkit",
+    "productName": "YMI Image Toolkit",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "build/icon.ico",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/sharp/**",
+      "**/node_modules/@img/**"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "signExecutable": false,
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    }
+  }
+}
