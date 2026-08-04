@@ -181,11 +181,12 @@ export default function App() {
   const selectedRows = useMemo(() => files.filter((f) => selected.has(f.id)), [files, selected])
 
   // ── conversion ─────────────────────────────────────────────────────────────
-  // A selection narrows what Convert acts on; with nothing selected it means "everything".
-  const convertible = useMemo(() => {
-    const pool = selected.size ? files.filter((f) => selected.has(f.id)) : files
-    return pool.filter((f) => f.status !== 'probing' && f.width > 0)
-  }, [files, selected])
+  // Converting is deliberately selection-gated: you pick the rows, then convert them.
+  // Nothing selected means nothing to convert, so the action stays disabled.
+  const convertible = useMemo(
+    () => files.filter((f) => selected.has(f.id) && f.status !== 'probing' && f.width > 0),
+    [files, selected]
+  )
 
   const startConversion = useCallback(async () => {
     const targets = convertible.map((f) => f.path)
@@ -306,13 +307,11 @@ export default function App() {
   }
 
   const selectedDownloadable = selectedRows.filter((f) => f.staged).length
-  // Spell out that no selection means "everything" — a bare count reads like it needs one.
   const actionLabel =
     phase === 'converting' ? 'Converting…'
       : phase === 'saving' ? 'Choosing…'
-        : selected.size ? `Convert ${convertible.length} selected`
-          : convertible.length ? `Convert all (${convertible.length})`
-            : 'Convert'
+        : convertible.length ? `Convert ${convertible.length} selected`
+          : 'Convert'
 
   return (
     <div
@@ -411,6 +410,7 @@ export default function App() {
             type="button"
             className="primary"
             disabled={busy || convertible.length === 0}
+            title={convertible.length ? undefined : 'Select images in the list first'}
             onClick={startConversion}
           >
             {actionLabel}

@@ -42,7 +42,7 @@ Close the running app before `npm run dist` — Windows keeps a lock on
 | Writes | **WebP, PNG, JPEG** |
 | Input | drag & drop files *or folders* (recursive, max depth 8), or the Add buttons |
 | Batch | 3 conversions in flight, per-file result and size delta, cancellable |
-| Selection | per-row checkbox + select-all; selected rows can be downloaded, removed, or narrow what Convert acts on. With nothing selected, Convert means everything |
+| Selection | per-row checkbox + select-all. Converting is selection-gated — Convert acts on the selected rows and stays disabled while nothing is picked. Selected rows can also be downloaded or removed together |
 | Naming | each row's title *is* its download name — click to rename it. The extension follows the output format and is not editable |
 | Resize | none / percentage (up- or downscale) / fit within a W x H box, Lanczos 3 |
 | Alpha | preserved for WebP + PNG; flattened onto a chosen colour for JPEG |
@@ -137,15 +137,15 @@ Two harnesses were used during the build (both throwaway, kept out of the repo):
   filename, collision counter, downloading the same conversion twice, lossless WebP
   proven by pixel-identical round trip, and the output-naming rules (suffix vs. manual
   rename, typed extensions stripped, illegal characters removed, spaces kept).
-* **Headless Electron** (hidden BrowserWindow on the built `dist/`) — 32 checks driving
+* **Headless Electron** (hidden BrowserWindow on the built `dist/`) — 36 checks driving
   the real UI with native clicks: renderer mounts, preload bridge exposed, glass blur
   computed live, page transparent for the acrylic, the three frameless window buttons
-  reach main, Add images populates rows with checkboxes, Convert is live and reads
-  "Convert all (3)" with nothing selected, renaming a row through the real input flows
-  all the way into the Save-As default and the file on disk, Convert stages all three
-  *without* a dialog, per-row Download asks Save-As once, bulk Download asks a folder
-  once, statuses and the unsaved counter track correctly, and removing rows deletes
-  their staged files.
+  reach main, Add images populates rows with checkboxes, Convert stays disabled until
+  something is selected and re-disables on deselect, the rename field renders in light
+  text and its value flows all the way into the Save-As default and the file on disk,
+  Convert stages all three *without* a dialog, per-row Download asks Save-As once, bulk
+  Download asks a folder once, statuses and the unsaved counter track correctly, and
+  removing rows deletes their staged files.
 
 The Electron harness exists because of a failure mode this stack is prone to: a build
 can succeed and still open to a blank window (a runtime error, usually a temporal-dead-

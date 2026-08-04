@@ -49,6 +49,7 @@ export default function EditableName({ stem, ext, disabled, title, onCommit }) {
     <div className="row-name is-editing">
       <input
         ref={inputRef}
+        type="text"
         className="name-input"
         value={draft}
         spellCheck={false}
