@@ -1,17 +1,27 @@
 # YMI Image Toolkit
 
-Standalone internal Windows desktop tool for batch image format conversion.
-Same family as `subtitle-template-editor-app/` and `subtitle-json-combiner-app/`:
-independently maintained, NOT wired into `worker/` or `ymi-books-web-1.0/`.
+A small, fast Windows desktop app for batch image format conversion — drop images
+or folders in, get PNG / JPEG / WebP out, with real control over quality and size.
 
-Primary job: turn web product originals (PNG / JPEG) into WebP, and back again.
+Built to turn web product originals (PNG / JPEG) into WebP and back, but it is a
+general-purpose converter. Everything runs locally: nothing is uploaded anywhere.
+
+Powered by [sharp](https://sharp.pixelplumbing.com/) (libvips) in an Electron shell.
+
+## Download
+
+Grab the latest installer from the [Releases](../../releases) page —
+`YMI Image Toolkit Setup <version>.exe`. Windows x64.
+
+The installer is unsigned, so SmartScreen will warn on first run
+(*More info → Run anyway*).
 
 ---
 
-## Run / build
+## Run / build from source
 
 ```bash
-cd "d:/IT_David/Program/Voice Imagination/Web/image-toolkit-app"
+npm install
 
 npm run dev        # Vite (port 5175) + Electron with devtools
 npm run dist       # -> release/YMI Image Toolkit Setup 0.1.0.exe
@@ -129,9 +139,9 @@ Two harnesses were used during the build (both throwaway, kept out of the repo):
   once, statuses and the unsaved counter track correctly, and removing rows deletes
   their staged files.
 
-The Electron harness exists because of a known failure mode in this app family: a
-build can succeed and still open to a blank window (a runtime error, usually a
-temporal-dead-zone read of a `const` declared below an early hook). Checking
+The Electron harness exists because of a failure mode this stack is prone to: a build
+can succeed and still open to a blank window (a runtime error, usually a temporal-dead-
+zone read of a `const` declared below an early hook). Checking
 `#root.childElementCount > 0` catches it.
 
 ---
@@ -146,12 +156,18 @@ image — and belongs with the background-removal work below, not with resamplin
 
 **One-click background removal** — feasible and worth doing, but it is a model, not
 a function: `onnxruntime-node` in the main process plus an RMBG-1.4 / ISNet class
-model (~40-180 MB). It slots in as one more step in `convertFile` between resize and
-flatten. Deferred for v1 because (a) the stated need is PNG/JPEG -> WebP, (b) it
-roughly triples the installer size, and (c) the model licence is a call to make
-before shipping it internally. Cheap non-AI alternatives (white-background flood
-fill) were skipped on purpose — they look acceptable on flat product shots and bad
-on everything else, which is exactly the kind of half-path this codebase avoids.
+model (~40-180 MB). It slots in as one more step in `convertToStaging` between resize
+and flatten. Deferred for v1 because (a) the job to be done is PNG/JPEG -> WebP,
+(b) it roughly triples the installer size, and (c) the model licence needs a decision
+first. Cheap non-AI alternatives (white-background flood fill) were skipped on purpose
+— they look acceptable on flat product shots and bad on everything else, which is
+exactly the kind of half-path this codebase avoids.
+
+**A browser version** — the pipeline is `sharp`, a native Node module, so it cannot be
+lifted to a web page as-is. A real web build means swapping the engine for WASM codecs
+(libwebp / mozjpeg / oxipng, Squoosh-style) behind the same settings contract, with
+downloads going through the File System Access API and a ZIP fallback. Near-parity is
+achievable; TIFF input and ICC preservation are what would be lost.
 
 **Other candidates**, in rough order of value: AVIF output, animated WebP/GIF
 (currently only the first frame is read — the row shows a "N frames - first only"
