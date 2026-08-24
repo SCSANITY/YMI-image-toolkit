@@ -114,6 +114,14 @@ border, 1px top highlight, backdrop blur — with iOS-style segmented controls, 
 round checkboxes and sliders. If the acrylic ever has to go, raise the `--tint-*` alphas
 in `styles.css` and the app still reads correctly.
 
+libvips (inside sharp) keeps up to 20 **open file handles** in its operation cache by
+default. On Windows that leaves a source image locked -- Explorer reports "file in use"
+long after the app is finished with it, and because the handle belongs to a global cache
+rather than to any list row, removing the row or clearing the list cannot release it.
+`sharp.cache({ files: 0 })` in `imageOps.cjs` zeroes the file-handle budget while leaving
+the in-memory result cache intact. Do not remove it; the regression is silent and only
+shows up when a user tries to move or delete a source file.
+
 `sharp` is a native module. It loads via Node-API so no `electron-rebuild` is needed,
 but it MUST stay outside the asar — `build.asarUnpack` in `package.json` covers
 `node_modules/sharp/**` and `node_modules/@img/**`. If a packaged build ever throws
@@ -126,7 +134,13 @@ through `webUtils.getPathForFile` in the preload — that is the only supported 
 
 ## Verified behaviour
 
-Two harnesses were used during the build (both throwaway, kept out of the repo):
+Harnesses used during development are throwaway and kept out of the repo. The
+file-lock fix (0.1.2) is covered by a check that writes a source in each readable format,
+runs probe + convert over it, then asserts the file can still be deleted and that libvips
+holds zero open handles — the failure it guards is silent, so it has to be asserted rather
+than eyeballed.
+
+Earlier rounds:
 
 * **Headless pipeline** (plain Node against `imageOps.cjs`) — 34 checks: folder
   recursion + non-image filtering, thumbnail/probe output, staging isolation (nothing

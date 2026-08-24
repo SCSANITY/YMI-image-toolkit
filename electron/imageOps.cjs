@@ -23,6 +23,13 @@ const sharp = require('sharp')
 // renderer's parallel batch does not oversubscribe the CPU.
 sharp.concurrency(2)
 
+// libvips' operation cache holds up to 20 OPEN FILE HANDLES by default. On Windows that
+// keeps a source image locked ("file in use") long after the app is done with it -- the
+// handle belongs to this global cache, not to any list row, so removing the row or
+// clearing the list cannot release it. Zero the file-handle budget; the in-memory result
+// cache (50MB / 100 items) is untouched, and this app reads each source once anyway.
+sharp.cache({ files: 0 })
+
 /** Extensions we can READ. Output is deliberately limited to OUTPUT_FORMATS. */
 const INPUT_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.avif', '.tif', '.tiff'])
 
