@@ -14,6 +14,7 @@ let slotCounter = 0
 
 let unsavedCount = 0
 let allowClose = false
+let closePromptOpen = false
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -40,23 +41,38 @@ function createWindow() {
   win.on('maximize', sendState)
   win.on('unmaximize', sendState)
 
+  // The confirm MUST be asynchronous. showMessageBoxSync blocks the main process, and
+  // blocking it from inside a close handler that has already called preventDefault() is how
+  // the app ends up alive with its window gone -- nothing is left to service the dialog or
+  // the quit. Attaching a sync modal to a frameless window can also leave it unreachable, so
+  // there is no visible way to answer it either.
   win.on('close', (event) => {
     if (allowClose || unsavedCount === 0) return
     event.preventDefault()
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'question',
-      buttons: ['Close anyway', 'Keep working'],
-      defaultId: 1,
-      cancelId: 1,
-      title: 'Unsaved conversions',
-      message: `${unsavedCount} converted image${unsavedCount === 1 ? '' : 's'} not downloaded yet.`,
-      detail: 'Converted images are held temporarily and are deleted when the app closes.',
-      noLink: true,
-    })
-    if (choice === 0) {
-      allowClose = true
-      win.close()
-    }
+    if (closePromptOpen) return
+    closePromptOpen = true
+
+    dialog
+      .showMessageBox(win, {
+        type: 'question',
+        buttons: ['Close anyway', 'Keep working'],
+        defaultId: 1,
+        cancelId: 1,
+        title: 'Unsaved conversions',
+        message: `${unsavedCount} converted image${unsavedCount === 1 ? '' : 's'} not downloaded yet.`,
+        detail: 'Converted images are held temporarily and are deleted when the app closes.',
+        noLink: true,
+      })
+      .then(({ response }) => {
+        closePromptOpen = false
+        if (response !== 0) return
+        allowClose = true
+        // destroy(), not close(): calling close() here re-enters this same handler.
+        win.destroy()
+      })
+      .catch(() => {
+        closePromptOpen = false
+      })
   })
 
   if (isDev) {
