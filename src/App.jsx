@@ -6,6 +6,7 @@ import WindowControls from './components/WindowControls.jsx'
 import { formatBytes } from './lib/format.js'
 import { runPool } from './lib/pool.js'
 import { outputExtFor, outputNameFor, outputStemFor, sanitizeStem } from './lib/naming.js'
+import { useFileDragOverlay } from './lib/useFileDragOverlay.js'
 
 const api = window.imageToolkit
 const SETTINGS_KEY = 'ymi-image-toolkit-settings'
@@ -29,7 +30,7 @@ export default function App() {
   const [files, setFiles] = useState([])
   const [selected, setSelected] = useState(() => new Set())
   const [phase, setPhase] = useState('idle') // idle | converting | saving
-  const [dragOver, setDragOver] = useState(false)
+  const dragOver = useFileDragOverlay()
   const [notice, setNotice] = useState('')
 
   const knownPaths = useRef(new Set())
@@ -122,7 +123,6 @@ export default function App() {
 
   const handleDrop = useCallback(async (event) => {
     event.preventDefault()
-    setDragOver(false)
     const paths = Array.from(event.dataTransfer.files).map((f) => api.pathForFile(f)).filter(Boolean)
     await addPaths(paths)
   }, [addPaths])
@@ -316,8 +316,6 @@ export default function App() {
   return (
     <div
       className={`app${dragOver ? ' is-dragover' : ''}`}
-      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false) }}
       onDrop={handleDrop}
     >
       <header className="topbar">
