@@ -71,7 +71,7 @@ function createWindow() {
     minWidth: 1120,
     minHeight: 720,
     title: 'YMI Image Prompt Lab',
-    backgroundColor: '#0c1117',
+    backgroundColor: '#f8f1e8',
     icon: path.join(__dirname, '..', '..', 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -108,7 +108,7 @@ function registerIpcHandlers() {
       capabilities: publicCapabilities(),
       apiKeyLoaded: status.configured && status.readable,
       apiKeyStatus: status,
-      defaultOutputRoot: path.join(app.getPath('documents'), 'YMI Prompt Lab Runs'),
+      defaultOutputRoot: path.join(app.getPath('documents'), 'YMI Prompt Lab Images'),
     }
   })
 
@@ -209,6 +209,7 @@ function registerIpcHandlers() {
     prepareRequest,
     executeImageEdit,
     getApiKey: loadApiKey,
+    getEvidenceRoot: () => path.join(app.getPath('userData'), 'prompt-lab-run-records'),
     registerRunDirectory: runRegistry.register,
     confirmRequest: async (event, prepared) => {
       assertTrustedEvent(event)

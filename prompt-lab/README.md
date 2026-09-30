@@ -72,19 +72,22 @@ Official references:
 - timeout or interrupted-body outcomes are recorded as unknown and are never
   resubmitted automatically;
 - the fixed endpoint cannot be changed in the UI;
-- each real request receives a new local folder containing sanitized request,
-  response and evidence JSON plus output images;
-- if that per-run folder disappears while a paid request is in flight, Prompt
-  Lab makes one local-only attempt to rebuild the same folder from the already
-  returned response; it never sends a second provider request;
+- each successful request receives a new operator-facing folder containing
+  generated images only;
+- sanitized request, response and safety evidence JSON stay in Prompt Lab's
+  internal Electron application-data directory and never clutter the selected
+  image destination;
+- if an internal evidence directory or output directory disappears while a paid
+  request is in flight, Prompt Lab makes at most one local-only recovery from
+  the same request/response bytes; it never sends a second provider request;
 - evidence contains filenames, hashes and dimensions, never the API key;
 - renderer navigation is pinned to the exact Prompt Lab entry page and local
-  run folders can be opened only through main-process run IDs;
-- source images are read in place and are not modified or copied into the run
-  directory.
+  image folders can be opened only through main-process run IDs;
+- source images are read in place and are not modified or copied into the image
+  output directory.
 
-By default, runs are written to `Documents\YMI Prompt Lab Runs`; the operator
-can choose another local folder before sending.
+By default, images are written to `Documents\YMI Prompt Lab Images`; the
+operator can choose another local folder before sending.
 
 ## Verification
 

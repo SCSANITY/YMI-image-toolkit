@@ -42,11 +42,11 @@ async function createPreviewDataUrl(input) {
   return `data:image/webp;base64,${thumbnail.toString('base64')}`
 }
 
-async function mapOutputPreview(output, runDirectory, previewDataUrl) {
+async function mapOutputPreview(output, outputDirectory, previewDataUrl) {
   try {
     return {
       ...output,
-      previewUrl: await previewDataUrl(path.join(runDirectory, output.file)),
+      previewUrl: await previewDataUrl(path.join(outputDirectory, output.file)),
       previewError: null,
     }
   } catch {
@@ -59,16 +59,21 @@ async function mapOutputPreview(output, runDirectory, previewDataUrl) {
 }
 
 async function verifyLocalArtifacts(result) {
-  const requiredFiles = [
+  const evidenceFiles = [
     'request.json',
     'REQUEST_STARTED.json',
     'response.json',
     'evidence.json',
+  ]
+  const imageFiles = [
     ...result.evidence.outputs.map((output) => output.file),
     ...result.evidence.partial_outputs.map((output) => output.file),
   ]
   try {
-    await Promise.all(requiredFiles.map((file) => fs.access(path.join(result.runDirectory, file))))
+    await Promise.all([
+      ...evidenceFiles.map((file) => fs.access(path.join(result.evidenceDirectory, file))),
+      ...imageFiles.map((file) => fs.access(path.join(result.outputDirectory, file))),
+    ])
     return true
   } catch {
     return false
@@ -80,6 +85,7 @@ function createExecuteHandler({
   executeImageEdit,
   confirmRequest,
   getApiKey,
+  getEvidenceRoot,
   registerRunDirectory = () => null,
   previewDataUrl = createPreviewDataUrl,
 }) {
@@ -104,13 +110,14 @@ function createExecuteHandler({
       const prepared = await prepareRequest(request)
       if (!await confirmRequest(event, prepared)) return { ok: false, cancelled: true }
 
-      const result = await executeImageEdit({ ...request, apiKey })
-      const runId = registerRunDirectory(result.runDirectory, result.evidence?.run_id)
+      const evidenceRoot = await getEvidenceRoot()
+      const result = await executeImageEdit({ ...request, evidenceRoot, apiKey })
+      const runId = registerRunDirectory(result.outputDirectory, result.evidence?.run_id)
       const outputs = await Promise.all(result.evidence.outputs.map((output) => (
-        mapOutputPreview(output, result.runDirectory, previewDataUrl)
+        mapOutputPreview(output, result.outputDirectory, previewDataUrl)
       )))
       const partialOutputs = await Promise.all(result.evidence.partial_outputs.map((output) => (
-        mapOutputPreview(output, result.runDirectory, previewDataUrl)
+        mapOutputPreview(output, result.outputDirectory, previewDataUrl)
       )))
       return {
         ok: true,
@@ -125,11 +132,7 @@ function createExecuteHandler({
         },
       }
     } catch (error) {
-      let runId = null
-      if (error?.runDirectory) {
-        try { runId = registerRunDirectory(error.runDirectory, error.runId) } catch { /* keep failure response path-free */ }
-      }
-      return errorResult(error, { runId })
+      return errorResult(error, { runId: error?.runId || null })
     } finally {
       if (activeOwner === owner) activeOwner = null
     }

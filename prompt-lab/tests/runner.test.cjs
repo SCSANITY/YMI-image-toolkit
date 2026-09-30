@@ -22,11 +22,13 @@ async function fixture(t) {
   const illustration = path.join(root, 'illustration.png')
   const identity = path.join(root, 'identity.jpg')
   const mask = path.join(root, 'mask.png')
+  const outputRoot = path.join(root, 'visible-images')
+  const evidenceRoot = path.join(root, 'internal-evidence')
   await sharp({ create: { width: 1024, height: 1024, channels: 4, background: { r: 20, g: 60, b: 90, alpha: 1 } } }).png().toFile(illustration)
   await sharp({ create: { width: 256, height: 256, channels: 3, background: { r: 210, g: 180, b: 140 } } }).jpeg().toFile(identity)
   await sharp({ create: { width: 1024, height: 1024, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toFile(mask)
   const output = await sharp({ create: { width: 1024, height: 1024, channels: 4, background: { r: 80, g: 120, b: 160, alpha: 1 } } }).png().toBuffer()
-  return { root, illustration, identity, mask, output }
+  return { root, illustration, identity, mask, output, outputRoot, evidenceRoot }
 }
 
 function successPayload(output) {
@@ -117,7 +119,8 @@ test('successful JSON execution makes exactly one call and writes sanitized evid
     prompt: 'edit exactly one face',
     settings: {},
     imagePaths: [f.illustration, f.identity],
-    outputRoot: f.root,
+    outputRoot: f.outputRoot,
+    evidenceRoot: f.evidenceRoot,
     experimentName: 'success',
     apiKey: secret,
     fetchImpl: async (_url, init) => {
@@ -133,10 +136,11 @@ test('successful JSON execution makes exactly one call and writes sanitized evid
   assert.equal(result.evidence.calculated_charge_usd, 0.00111)
   assert.equal(result.evidence.outputs[0].width, 1024)
   assert.equal(result.evidence.outputs[0].height, 1024)
-  const files = await fs.readdir(result.runDirectory)
-  assert.deepEqual(files.sort(), ['REQUEST_STARTED.json', 'evidence.json', 'output-01.png', 'request.json', 'response.json'])
-  for (const file of files.filter((name) => name.endsWith('.json'))) {
-    assert.doesNotMatch(await fs.readFile(path.join(result.runDirectory, file), 'utf8'), new RegExp(secret))
+  assert.deepEqual(await fs.readdir(result.outputDirectory), ['output-01.png'])
+  const evidenceFiles = await fs.readdir(result.evidenceDirectory)
+  assert.deepEqual(evidenceFiles.sort(), ['REQUEST_STARTED.json', 'evidence.json', 'request.json', 'response.json'])
+  for (const file of evidenceFiles) {
+    assert.doesNotMatch(await fs.readFile(path.join(result.evidenceDirectory, file), 'utf8'), new RegExp(secret))
   }
 })
 
@@ -147,15 +151,16 @@ test('a missing run directory is rebuilt locally after the provider result witho
     prompt: 'edit exactly one face',
     settings: {},
     imagePaths: [f.illustration, f.identity],
-    outputRoot: f.root,
+    outputRoot: f.outputRoot,
+    evidenceRoot: f.evidenceRoot,
     experimentName: 'recover-missing-directory',
     apiKey: 'sk-test',
     fetchImpl: async () => {
       calls += 1
-      const runFolder = (await fs.readdir(f.root, { withFileTypes: true }))
+      const runFolder = (await fs.readdir(f.evidenceRoot, { withFileTypes: true }))
         .find((entry) => entry.isDirectory())
       assert.ok(runFolder)
-      await fs.rm(path.join(f.root, runFolder.name), { recursive: true, force: true })
+      await fs.rm(path.join(f.evidenceRoot, runFolder.name), { recursive: true, force: true })
       return new Response(JSON.stringify(successPayload(f.output)), {
         status: 200,
         headers: { 'x-request-id': 'req_recovered_locally' },
@@ -164,47 +169,53 @@ test('a missing run directory is rebuilt locally after the provider result witho
   })
 
   assert.equal(calls, 1)
-  assert.equal(result.evidence.local_artifact_recovery, 'recreated_missing_run_directory')
-  assert.deepEqual((await fs.readdir(result.runDirectory)).sort(), [
+  assert.equal(result.evidence.local_evidence_recovery, 'recreated_missing_evidence_directory')
+  assert.deepEqual((await fs.readdir(result.evidenceDirectory)).sort(), [
     'REQUEST_STARTED.json',
     'evidence.json',
-    'output-01.png',
     'request.json',
     'response.json',
   ])
+  assert.deepEqual(await fs.readdir(result.outputDirectory), ['output-01.png'])
 })
 
 test('HTTP 503 is conclusively rejected after one call and never retried', async (t) => {
   const f = await fixture(t)
   let calls = 0
+  let evidenceDirectory
   await assert.rejects(
     () => executeImageEdit({
-      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.root,
+      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
       experimentName: '503', apiKey: 'sk-test',
       fetchImpl: async () => {
         calls += 1
         return new Response(JSON.stringify({ error: { code: 'server_error', type: 'server_error', message: 'Temporarily unavailable' } }), { status: 503 })
       },
     }),
-    (error) => error.code === 'openai_request_rejected' && error.disposition === 'conclusively_rejected',
+    (error) => {
+      evidenceDirectory = error.evidenceDirectory
+      return error.code === 'openai_request_rejected' && error.disposition === 'conclusively_rejected'
+    },
   )
   assert.equal(calls, 1)
+  await assert.rejects(fs.access(f.outputRoot), (error) => error.code === 'ENOENT')
+  assert.ok((await fs.readdir(evidenceDirectory)).includes('evidence.json'))
 })
 
 test('transport failure is outcome_unknown after one call and never retried', async (t) => {
   const f = await fixture(t)
   let calls = 0
-  let runDirectory
+  let evidenceDirectory
   await assert.rejects(
     () => executeImageEdit({
-      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.root,
+      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
       experimentName: 'timeout', apiKey: 'sk-test',
       fetchImpl: async () => { calls += 1; throw new Error('simulated transport timeout') },
     }),
-    (error) => { runDirectory = error.runDirectory; return error.code === 'openai_outcome_unknown' && error.disposition === 'outcome_unknown' },
+    (error) => { evidenceDirectory = error.evidenceDirectory; return error.code === 'openai_outcome_unknown' && error.disposition === 'outcome_unknown' },
   )
   assert.equal(calls, 1)
-  const evidence = JSON.parse(await fs.readFile(path.join(runDirectory, 'evidence.json'), 'utf8'))
+  const evidence = JSON.parse(await fs.readFile(path.join(evidenceDirectory, 'evidence.json'), 'utf8'))
   assert.equal(evidence.transport_calls, 1)
   assert.equal(evidence.automatic_retry, false)
 })
@@ -214,20 +225,20 @@ test('a vanished run directory never masks an unknown transport outcome or trigg
   let calls = 0
   await assert.rejects(
     () => executeImageEdit({
-      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.root,
+      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
       experimentName: 'missing-evidence-directory', apiKey: 'sk-test',
       fetchImpl: async () => {
         calls += 1
-        const runFolder = (await fs.readdir(f.root, { withFileTypes: true }))
+        const runFolder = (await fs.readdir(f.evidenceRoot, { withFileTypes: true }))
           .find((entry) => entry.isDirectory())
         assert.ok(runFolder)
-        await fs.rm(path.join(f.root, runFolder.name), { recursive: true, force: true })
+        await fs.rm(path.join(f.evidenceRoot, runFolder.name), { recursive: true, force: true })
         throw new Error('simulated transport timeout')
       },
     }),
     (error) => error.code === 'openai_outcome_unknown'
       && error.disposition === 'outcome_unknown'
-      && error.evidenceSaved === false,
+      && error.evidenceSaved === true,
   )
   assert.equal(calls, 1)
 })
@@ -235,10 +246,10 @@ test('a vanished run directory never masks an unknown transport outcome or trigg
 test('interrupted successful response body is outcome_unknown and never retried', async (t) => {
   const f = await fixture(t)
   let calls = 0
-  let runDirectory
+  let evidenceDirectory
   await assert.rejects(
     () => executeImageEdit({
-      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.root,
+      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
       experimentName: 'interrupted-body', apiKey: 'sk-test',
       fetchImpl: async () => {
         calls += 1
@@ -250,10 +261,10 @@ test('interrupted successful response body is outcome_unknown and never retried'
         }
       },
     }),
-    (error) => { runDirectory = error.runDirectory; return error.code === 'openai_outcome_unknown' && error.disposition === 'outcome_unknown' },
+    (error) => { evidenceDirectory = error.evidenceDirectory; return error.code === 'openai_outcome_unknown' && error.disposition === 'outcome_unknown' },
   )
   assert.equal(calls, 1)
-  const evidence = JSON.parse(await fs.readFile(path.join(runDirectory, 'evidence.json'), 'utf8'))
+  const evidence = JSON.parse(await fs.readFile(path.join(evidenceDirectory, 'evidence.json'), 'utf8'))
   assert.equal(evidence.provider_request_id, 'req_interrupted')
   assert.equal(evidence.transport_calls, 1)
 })
@@ -262,7 +273,7 @@ test('missing key fails before transport and before creating a run directory', a
   const f = await fixture(t)
   let calls = 0
   await assert.rejects(() => executeImageEdit({
-    prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.root,
+    prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
     experimentName: 'missing-key', apiKey: '', fetchImpl: async () => { calls += 1 },
   }), (error) => error.code === 'openai_api_key_missing')
   assert.equal(calls, 0)
@@ -280,7 +291,7 @@ test('streaming response saves partial and completed events with one call', asyn
     '',
   ].join('\n\n')
   const result = await executeImageEdit({
-    prompt: 'edit', settings: { stream: true, partial_images: 1 }, imagePaths: [f.illustration], outputRoot: f.root,
+    prompt: 'edit', settings: { stream: true, partial_images: 1 }, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
     experimentName: 'stream', apiKey: 'sk-test',
     fetchImpl: async () => { calls += 1; return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }) },
   })
@@ -296,7 +307,7 @@ test('mismatched returned dimensions fail after one call with result_received', 
   const wrong = await sharp({ create: { width: 2048, height: 2048, channels: 3, background: '#234567' } }).png().toBuffer()
   let calls = 0
   await assert.rejects(() => executeImageEdit({
-    prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.root,
+    prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
     experimentName: 'wrong-size', apiKey: 'sk-test',
     fetchImpl: async () => { calls += 1; return new Response(JSON.stringify(successPayload(wrong)), { status: 200 }) },
   }), (error) => error.code === 'response_size_mismatch' && error.disposition === 'result_received')
@@ -307,7 +318,7 @@ test('missing requested outputs fail closed after one call', async (t) => {
   const f = await fixture(t)
   let calls = 0
   await assert.rejects(() => executeImageEdit({
-    prompt: 'edit', settings: { n: 2 }, imagePaths: [f.illustration], outputRoot: f.root,
+    prompt: 'edit', settings: { n: 2 }, imagePaths: [f.illustration], outputRoot: f.outputRoot, evidenceRoot: f.evidenceRoot,
     experimentName: 'missing-output', apiKey: 'sk-test',
     fetchImpl: async () => { calls += 1; return new Response(JSON.stringify(successPayload(f.output)), { status: 200 }) },
   }), (error) => error.code === 'response_image_count_mismatch' && error.disposition === 'result_received')

@@ -73,6 +73,10 @@ async function main() {
     keyStatus: document.body.innerText.includes('API key missing'),
     keyInput: document.querySelector('input[aria-label="OpenAI API key"]')?.type,
     sizeOptions: Array.from(document.querySelector('select[aria-label="Size preset"]')?.options || []).map((option) => option.value),
+    workspaceColumns: getComputedStyle(document.querySelector('.creative-workspace')).gridTemplateColumns.split(' ').length,
+    backgroundColor: getComputedStyle(document.body).backgroundColor,
+    imageOnlyCopy: document.body.innerText.includes('Images-only output') && document.body.innerText.includes('containing images only'),
+    canvasVisible: Boolean(document.querySelector('.result-canvas')),
   })`)
   assert.equal(initial.title, 'YMI Image Prompt Lab')
   assert.equal(initial.h1, 'Image Prompt Lab')
@@ -81,10 +85,14 @@ async function main() {
   assert.equal(initial.keyStatus, true)
   assert.equal(initial.keyInput, 'password')
   assert.deepEqual(initial.sizeOptions, ['1024x1024', '2048x2048', '1536x1024', '1024x1536', 'auto', 'custom'])
+  assert.equal(initial.workspaceColumns, 3)
+  assert.notEqual(initial.backgroundColor, 'rgb(10, 15, 21)')
+  assert.equal(initial.imageOnlyCopy, true)
+  assert.equal(initial.canvasVisible, true)
   assert.ok(initial.buttons.includes('Validate / dry run'))
   assert.ok(initial.buttons.includes('Send one paid request'))
 
-  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find((button) => button.textContent.trim() === 'Add images').click()`)
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find((button) => button.textContent.trim() === '+ Add').click()`)
   const inputPreview = await win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
     const started = Date.now()
     const check = () => {

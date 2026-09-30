@@ -45,11 +45,13 @@ test('real execute handler atomically admits one overlapping call and one transp
     prepareRequest: async () => ({ settings: { model: 'test-model' }, images: [] }),
     confirmRequest: async () => confirmation.promise,
     getApiKey: () => 'sk-test',
+    getEvidenceRoot: () => path.join(os.tmpdir(), 'prompt-lab-evidence'),
     executeImageEdit: async () => {
       transportCalls += 1
       await transport.promise
       return {
-        runDirectory: 'unused',
+        outputDirectory: 'unused-output',
+        evidenceDirectory: 'unused-evidence',
         evidence: { outputs: [], partial_outputs: [] },
       }
     },
@@ -74,6 +76,7 @@ test('a missing local preview does not turn a completed provider request into a 
     prepareRequest: async () => ({ settings: { model: 'test-model' }, images: [] }),
     confirmRequest: async () => true,
     getApiKey: () => 'sk-test',
+    getEvidenceRoot: () => path.join(os.tmpdir(), 'prompt-lab-evidence'),
     registerRunDirectory: () => '2026-09-30_10-22-34-259_b53ea7',
     previewDataUrl: async () => {
       const error = new Error('missing output')
@@ -81,7 +84,8 @@ test('a missing local preview does not turn a completed provider request into a 
       throw error
     },
     executeImageEdit: async () => ({
-      runDirectory: path.join(os.tmpdir(), 'missing-prompt-lab-run'),
+      outputDirectory: path.join(os.tmpdir(), 'missing-prompt-lab-output'),
+      evidenceDirectory: path.join(os.tmpdir(), 'missing-prompt-lab-evidence'),
       request: { endpoint: 'test' },
       response: { http_status: 200 },
       evidence: {
