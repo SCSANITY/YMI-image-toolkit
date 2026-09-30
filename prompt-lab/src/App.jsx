@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 const api = window.promptLab
 const PRESETS_KEY = 'ymi-prompt-lab-presets-v1'
 const SETTINGS_KEY = 'ymi-prompt-lab-settings-v1'
+const SIZE_PRESETS = ['1024x1024', '2048x2048', '1536x1024', '1024x1536', 'auto']
 
 function formatBytes(value) {
   const bytes = Number(value) || 0
@@ -161,16 +162,30 @@ function App() {
         return
       }
       if (!response.ok) {
-        const suffix = response.error.runId ? ` Evidence was saved for run ${response.error.runId}.` : ''
+        const evidenceNote = response.error.runId && response.error.evidenceSaved
+          ? ` Evidence was saved for run ${response.error.runId}.`
+          : response.error.runId
+            ? ` Run ${response.error.runId} was assigned, but local evidence could not be verified.`
+            : ''
+        const requestNote = response.error.providerRequestId
+          ? ` Provider request ID: ${response.error.providerRequestId}.`
+          : ''
         setNotice({
-          tone: response.error.disposition === 'outcome_unknown' ? 'warning' : 'error',
-          text: `${response.error.message}${suffix}`,
+          tone: ['outcome_unknown', 'result_received'].includes(response.error.disposition) ? 'warning' : 'error',
+          text: `${response.error.message}${evidenceNote}${requestNote}`,
         })
         return
       }
       setResult(response.result)
       setDryRun(response.result.request)
-      setNotice({ tone: 'success', text: 'One request completed. Outputs and evidence were saved locally.' })
+      const missingPreviews = response.result.outputs.filter((output) => !output.previewUrl).length
+      if (!response.result.localArtifactsAvailable) {
+        setNotice({ tone: 'warning', text: 'The provider request completed, but the local run files could not be verified. Do not resend automatically.' })
+      } else if (missingPreviews) {
+        setNotice({ tone: 'warning', text: `One request completed and was saved locally. ${missingPreviews} preview thumbnail(s) could not be displayed; use Open run folder.` })
+      } else {
+        setNotice({ tone: 'success', text: 'One request completed. Outputs and evidence were saved locally.' })
+      }
     } finally {
       setBusy(false)
     }
@@ -416,9 +431,27 @@ function App() {
             {!model?.pinned ? <div className="inline-warning">Rolling aliases can change behavior. Use a dated snapshot for reproducible comparisons.</div> : null}
 
             <div className="field-grid">
-              <Field label="Size" hint="Use auto or WIDTHxHEIGHT; both edges must be divisible by 16.">
-                <input value={settings.size} onChange={(event) => update('size', event.target.value)} list="size-options" />
-                <datalist id="size-options"><option value="1024x1024" /><option value="2048x2048" /><option value="1536x1024" /><option value="1024x1536" /><option value="auto" /></datalist>
+              <Field label="Size" hint="Choose a visible preset, or use Custom for WIDTHxHEIGHT; both edges must be divisible by 16.">
+                <select
+                  aria-label="Size preset"
+                  value={SIZE_PRESETS.includes(settings.size) ? settings.size : 'custom'}
+                  onChange={(event) => update('size', event.target.value === 'custom' ? '' : event.target.value)}
+                >
+                  <option value="1024x1024">1024x1024</option>
+                  <option value="2048x2048">2048x2048</option>
+                  <option value="1536x1024">1536x1024</option>
+                  <option value="1024x1536">1024x1536</option>
+                  <option value="auto">auto</option>
+                  <option value="custom">Custom size…</option>
+                </select>
+                {!SIZE_PRESETS.includes(settings.size) ? (
+                  <input
+                    aria-label="Custom size"
+                    value={settings.size}
+                    onChange={(event) => update('size', event.target.value)}
+                    placeholder="e.g. 1280x1280"
+                  />
+                ) : null}
               </Field>
               <Field label="Quality">
                 <select value={settings.quality} onChange={(event) => update('quality', event.target.value)}>
@@ -520,7 +553,9 @@ function App() {
           <div className="output-grid">
             {result.outputs.map((output) => (
               <figure key={output.file}>
-                <img src={output.previewUrl} alt={`Generated output ${output.file}`} />
+                {output.previewUrl
+                  ? <img src={output.previewUrl} alt={`Generated output ${output.file}`} />
+                  : <div className="output-preview-unavailable">Preview unavailable<br /><small>The saved file may still be opened from the run folder.</small></div>}
                 <figcaption><strong>{output.file}</strong><span>{output.width}×{output.height} · {formatBytes(output.byte_count)}</span><code>{output.sha256.slice(0, 16)}…</code></figcaption>
               </figure>
             ))}

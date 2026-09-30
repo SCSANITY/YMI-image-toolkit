@@ -140,6 +140,40 @@ test('successful JSON execution makes exactly one call and writes sanitized evid
   }
 })
 
+test('a missing run directory is rebuilt locally after the provider result without another request', async (t) => {
+  const f = await fixture(t)
+  let calls = 0
+  const result = await executeImageEdit({
+    prompt: 'edit exactly one face',
+    settings: {},
+    imagePaths: [f.illustration, f.identity],
+    outputRoot: f.root,
+    experimentName: 'recover-missing-directory',
+    apiKey: 'sk-test',
+    fetchImpl: async () => {
+      calls += 1
+      const runFolder = (await fs.readdir(f.root, { withFileTypes: true }))
+        .find((entry) => entry.isDirectory())
+      assert.ok(runFolder)
+      await fs.rm(path.join(f.root, runFolder.name), { recursive: true, force: true })
+      return new Response(JSON.stringify(successPayload(f.output)), {
+        status: 200,
+        headers: { 'x-request-id': 'req_recovered_locally' },
+      })
+    },
+  })
+
+  assert.equal(calls, 1)
+  assert.equal(result.evidence.local_artifact_recovery, 'recreated_missing_run_directory')
+  assert.deepEqual((await fs.readdir(result.runDirectory)).sort(), [
+    'REQUEST_STARTED.json',
+    'evidence.json',
+    'output-01.png',
+    'request.json',
+    'response.json',
+  ])
+})
+
 test('HTTP 503 is conclusively rejected after one call and never retried', async (t) => {
   const f = await fixture(t)
   let calls = 0
@@ -173,6 +207,29 @@ test('transport failure is outcome_unknown after one call and never retried', as
   const evidence = JSON.parse(await fs.readFile(path.join(runDirectory, 'evidence.json'), 'utf8'))
   assert.equal(evidence.transport_calls, 1)
   assert.equal(evidence.automatic_retry, false)
+})
+
+test('a vanished run directory never masks an unknown transport outcome or triggers a retry', async (t) => {
+  const f = await fixture(t)
+  let calls = 0
+  await assert.rejects(
+    () => executeImageEdit({
+      prompt: 'edit', settings: {}, imagePaths: [f.illustration], outputRoot: f.root,
+      experimentName: 'missing-evidence-directory', apiKey: 'sk-test',
+      fetchImpl: async () => {
+        calls += 1
+        const runFolder = (await fs.readdir(f.root, { withFileTypes: true }))
+          .find((entry) => entry.isDirectory())
+        assert.ok(runFolder)
+        await fs.rm(path.join(f.root, runFolder.name), { recursive: true, force: true })
+        throw new Error('simulated transport timeout')
+      },
+    }),
+    (error) => error.code === 'openai_outcome_unknown'
+      && error.disposition === 'outcome_unknown'
+      && error.evidenceSaved === false,
+  )
+  assert.equal(calls, 1)
 })
 
 test('interrupted successful response body is outcome_unknown and never retried', async (t) => {

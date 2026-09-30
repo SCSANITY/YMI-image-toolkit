@@ -45,7 +45,8 @@ confirmation showing model, size, quality, output count and the no-retry rule.
 - 1–16 ordered PNG, JPEG or WebP inputs;
 - optional alpha PNG mask applied to input 1;
 - pinned and rolling GPT Image 2.5 Flare/Sunburst model IDs;
-- `size`, including valid custom `WIDTHxHEIGHT` values and `auto`;
+- `size`, with visible 1024x1024, 2048x2048, landscape, portrait and `auto`
+  presets plus valid custom `WIDTHxHEIGHT` values;
 - `quality`, `output_format`, `background`, `n` and conditional
   `output_compression`;
 - optional streaming plus `partial_images`;
@@ -73,6 +74,9 @@ Official references:
 - the fixed endpoint cannot be changed in the UI;
 - each real request receives a new local folder containing sanitized request,
   response and evidence JSON plus output images;
+- if that per-run folder disappears while a paid request is in flight, Prompt
+  Lab makes one local-only attempt to rebuild the same folder from the already
+  returned response; it never sends a second provider request;
 - evidence contains filenames, hashes and dimensions, never the API key;
 - renderer navigation is pinned to the exact Prompt Lab entry page and local
   run folders can be opened only through main-process run IDs;

@@ -1,6 +1,7 @@
 'use strict'
 
 const path = require('node:path')
+const fs = require('node:fs/promises')
 const sharp = require('sharp')
 
 const PREVIEW_MAX_DIMENSION = 768
@@ -16,6 +17,7 @@ function errorResult(error, { runId = null } = {}) {
       httpStatus: error?.httpStatus || null,
       providerRequestId: error?.providerRequestId || null,
       runId,
+      evidenceSaved: error?.evidenceSaved === true,
     },
   }
 }
@@ -38,6 +40,39 @@ async function createPreviewDataUrl(input) {
     })
   }
   return `data:image/webp;base64,${thumbnail.toString('base64')}`
+}
+
+async function mapOutputPreview(output, runDirectory, previewDataUrl) {
+  try {
+    return {
+      ...output,
+      previewUrl: await previewDataUrl(path.join(runDirectory, output.file)),
+      previewError: null,
+    }
+  } catch {
+    return {
+      ...output,
+      previewUrl: null,
+      previewError: 'local_preview_unavailable',
+    }
+  }
+}
+
+async function verifyLocalArtifacts(result) {
+  const requiredFiles = [
+    'request.json',
+    'REQUEST_STARTED.json',
+    'response.json',
+    'evidence.json',
+    ...result.evidence.outputs.map((output) => output.file),
+    ...result.evidence.partial_outputs.map((output) => output.file),
+  ]
+  try {
+    await Promise.all(requiredFiles.map((file) => fs.access(path.join(result.runDirectory, file))))
+    return true
+  } catch {
+    return false
+  }
 }
 
 function createExecuteHandler({
@@ -71,6 +106,12 @@ function createExecuteHandler({
 
       const result = await executeImageEdit({ ...request, apiKey })
       const runId = registerRunDirectory(result.runDirectory, result.evidence?.run_id)
+      const outputs = await Promise.all(result.evidence.outputs.map((output) => (
+        mapOutputPreview(output, result.runDirectory, previewDataUrl)
+      )))
+      const partialOutputs = await Promise.all(result.evidence.partial_outputs.map((output) => (
+        mapOutputPreview(output, result.runDirectory, previewDataUrl)
+      )))
       return {
         ok: true,
         result: {
@@ -78,14 +119,9 @@ function createExecuteHandler({
           response: result.response,
           evidence: result.evidence,
           runId,
-          outputs: await Promise.all(result.evidence.outputs.map(async (output) => ({
-            ...output,
-            previewUrl: await previewDataUrl(path.join(result.runDirectory, output.file)),
-          }))),
-          partialOutputs: await Promise.all(result.evidence.partial_outputs.map(async (output) => ({
-            ...output,
-            previewUrl: await previewDataUrl(path.join(result.runDirectory, output.file)),
-          }))),
+          localArtifactsAvailable: await verifyLocalArtifacts(result),
+          outputs,
+          partialOutputs,
         },
       }
     } catch (error) {
@@ -106,4 +142,6 @@ module.exports = {
   createExecuteHandler,
   createPreviewDataUrl,
   errorResult,
+  mapOutputPreview,
+  verifyLocalArtifacts,
 }

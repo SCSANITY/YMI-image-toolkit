@@ -72,6 +72,7 @@ async function main() {
     overlays: document.querySelectorAll('.vite-error-overlay').length,
     keyStatus: document.body.innerText.includes('API key missing'),
     keyInput: document.querySelector('input[aria-label="OpenAI API key"]')?.type,
+    sizeOptions: Array.from(document.querySelector('select[aria-label="Size preset"]')?.options || []).map((option) => option.value),
   })`)
   assert.equal(initial.title, 'YMI Image Prompt Lab')
   assert.equal(initial.h1, 'Image Prompt Lab')
@@ -79,6 +80,7 @@ async function main() {
   assert.equal(initial.overlays, 0)
   assert.equal(initial.keyStatus, true)
   assert.equal(initial.keyInput, 'password')
+  assert.deepEqual(initial.sizeOptions, ['1024x1024', '2048x2048', '1536x1024', '1024x1536', 'auto', 'custom'])
   assert.ok(initial.buttons.includes('Validate / dry run'))
   assert.ok(initial.buttons.includes('Send one paid request'))
 

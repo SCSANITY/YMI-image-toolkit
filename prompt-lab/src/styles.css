@@ -121,6 +121,8 @@ button.full { width: 100%; min-height: 44px; }
 .output-grid { margin-top: 15px; display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 13px; }
 .output-grid figure { margin: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: rgba(0,0,0,.16); }
 .output-grid img { width: 100%; aspect-ratio: 1; display: block; object-fit: contain; background: #070b10; }
+.output-preview-unavailable { aspect-ratio: 1; display: grid; place-content: center; gap: 6px; padding: 20px; text-align: center; color: var(--muted); background: #070b10; }
+.output-preview-unavailable small { max-width: 230px; line-height: 1.45; }
 .output-grid figcaption { display: grid; gap: 3px; padding: 10px; }
 .output-grid figcaption span, .output-grid figcaption code { color: var(--muted); font-size: 11px; }
 

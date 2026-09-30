@@ -11,6 +11,7 @@ const {
   PREVIEW_MAX_DIMENSION,
   createExecuteHandler,
   createPreviewDataUrl,
+  errorResult,
 } = require('../electron/promptLabHandlers.cjs')
 
 function deferred() {
@@ -66,4 +67,39 @@ test('real execute handler atomically admits one overlapping call and one transp
   transport.resolve()
   assert.equal((await first).ok, true)
   assert.equal(transportCalls, 1)
+})
+
+test('a missing local preview does not turn a completed provider request into a second-request error', async () => {
+  const handler = createExecuteHandler({
+    prepareRequest: async () => ({ settings: { model: 'test-model' }, images: [] }),
+    confirmRequest: async () => true,
+    getApiKey: () => 'sk-test',
+    registerRunDirectory: () => '2026-09-30_10-22-34-259_b53ea7',
+    previewDataUrl: async () => {
+      const error = new Error('missing output')
+      error.code = 'ENOENT'
+      throw error
+    },
+    executeImageEdit: async () => ({
+      runDirectory: path.join(os.tmpdir(), 'missing-prompt-lab-run'),
+      request: { endpoint: 'test' },
+      response: { http_status: 200 },
+      evidence: {
+        run_id: '2026-09-30_10-22-34-259_b53ea7',
+        outputs: [{ file: 'output-01.png', width: 1024, height: 1024, byte_count: 1, sha256: 'A' }],
+        partial_outputs: [],
+      },
+    }),
+  })
+
+  const response = await handler({ sender: {} }, { prompt: 'test' })
+  assert.equal(response.ok, true)
+  assert.equal(response.result.localArtifactsAvailable, false)
+  assert.equal(response.result.outputs[0].previewUrl, null)
+  assert.equal(response.result.outputs[0].previewError, 'local_preview_unavailable')
+})
+
+test('error responses claim saved evidence only when the runner proved it', () => {
+  assert.equal(errorResult(Object.assign(new Error('saved'), { evidenceSaved: true }), { runId: 'run-saved' }).error.evidenceSaved, true)
+  assert.equal(errorResult(new Error('not saved'), { runId: 'run-missing' }).error.evidenceSaved, false)
 })

@@ -58,6 +58,13 @@ function calculateChargeUsd(usage) {
   ).toFixed(6))
 }
 
+function localArtifactWriteError(cause) {
+  return Object.assign(new Error('OpenAI returned a result, but Prompt Lab could not save the local run artifacts.'), {
+    code: 'local_artifact_write_failed',
+    cause,
+  })
+}
+
 async function readBoundedFile(filePath, byteLimit, { isMask = false, fsImpl = fs } = {}) {
   let stats
   try {
@@ -299,14 +306,15 @@ async function executeImageEdit({
 
   const form = appendTextFields(new FormData(), prepared)
   const startedAt = Date.now()
-  await writeJson(path.join(runDirectory, 'REQUEST_STARTED.json'), {
+  const requestStartedEvidence = {
     schema_version: 1,
     run_id: id,
     started_at: now().toISOString(),
     endpoint: ENDPOINT,
     request_count: 1,
     automatic_retry: false,
-  }, { flag: 'wx' })
+  }
+  await writeJson(path.join(runDirectory, 'REQUEST_STARTED.json'), requestStartedEvidence, { flag: 'wx' })
 
   let response
   let transportCalls = 0
@@ -330,10 +338,15 @@ async function executeImageEdit({
       automatic_retry: false,
       error: { code: 'openai_outcome_unknown', message: 'The request may have been accepted; do not automatically resubmit.' },
     }
-    await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+    let evidenceSaved = false
+    try {
+      await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+      evidenceSaved = true
+    } catch { /* preserve the unknown provider outcome */ }
     const error = Object.assign(new Error(evidence.error.message), {
       code: evidence.error.code,
       disposition: 'outcome_unknown',
+      evidenceSaved,
       runId: id,
       runDirectory,
       cause,
@@ -362,10 +375,15 @@ async function executeImageEdit({
         http_status: response.status,
         error: { code: 'openai_outcome_unknown', message: 'Response body was interrupted; do not automatically resubmit.' },
       }
-      await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+      let evidenceSaved = false
+      try {
+        await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+        evidenceSaved = true
+      } catch { /* preserve the unknown provider outcome */ }
       throw Object.assign(new Error(evidence.error.message), {
         code: evidence.error.code,
         disposition: 'outcome_unknown',
+        evidenceSaved,
         providerRequestId,
         runId: id,
         runDirectory,
@@ -391,10 +409,15 @@ async function executeImageEdit({
         message: cleanText(providerError?.message) || `OpenAI rejected the request with HTTP ${response.status}.`,
       },
     }
-    await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+    let evidenceSaved = false
+    try {
+      await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+      evidenceSaved = true
+    } catch { /* preserve the conclusive provider rejection */ }
     throw Object.assign(new Error(evidence.error.message), {
       code: 'openai_request_rejected',
       disposition: 'conclusively_rejected',
+      evidenceSaved,
       httpStatus: response.status,
       providerRequestId,
       runId: id,
@@ -411,21 +434,23 @@ async function executeImageEdit({
     }
 
     const outputRecords = []
+    const outputArtifacts = []
     for (let index = 0; index < decoded.finals.length; index += 1) {
       const output = await validateOutput(decoded.finals[index]?.b64_json, prepared.settings)
       const file = `output-${String(index + 1).padStart(2, '0')}.${output.extension}`
-      await fs.writeFile(path.join(runDirectory, file), output.bytes, { flag: 'wx' })
+      outputArtifacts.push({ file, bytes: output.bytes })
       outputRecords.push({ file, ...output, bytes: undefined })
     }
 
     const partialRecords = []
+    const partialArtifacts = []
     for (let index = 0; index < decoded.partials.length; index += 1) {
       const partial = await validateOutput(decoded.partials[index]?.b64_json, prepared.settings)
       const sourceIndex = Number.isInteger(decoded.partials[index]?.partial_image_index)
         ? decoded.partials[index].partial_image_index
         : null
       const file = `partial-${String(index + 1).padStart(2, '0')}.${partial.extension}`
-      await fs.writeFile(path.join(runDirectory, file), partial.bytes, { flag: 'wx' })
+      partialArtifacts.push({ file, bytes: partial.bytes })
       partialRecords.push({ file, provider_partial_image_index: sourceIndex, ...partial, bytes: undefined })
     }
 
@@ -440,9 +465,8 @@ async function executeImageEdit({
       usage: decoded.usage,
       stream_events: decoded.payload?.events || null,
     }
-    await writeJson(path.join(runDirectory, 'response.json'), responseEvidence, { flag: 'wx' })
     const completedAt = Date.now()
-    const evidence = {
+    let evidence = {
       schema_version: 1,
       result: 'success',
       run_id: id,
@@ -456,11 +480,61 @@ async function executeImageEdit({
       outputs: outputRecords,
       partial_outputs: partialRecords,
     }
-    await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+
+    const persistCompletedRun = async ({ recreate = false } = {}) => {
+      if (recreate) {
+        await fs.mkdir(resolvedOutputRoot, { recursive: true })
+        await fs.mkdir(runDirectory, { recursive: false })
+        await writeJson(path.join(runDirectory, 'request.json'), requestEvidence, { flag: 'wx' })
+        await writeJson(path.join(runDirectory, 'REQUEST_STARTED.json'), requestStartedEvidence, { flag: 'wx' })
+      }
+      for (const output of outputArtifacts) {
+        await fs.writeFile(path.join(runDirectory, output.file), output.bytes, { flag: 'wx' })
+      }
+      for (const partial of partialArtifacts) {
+        await fs.writeFile(path.join(runDirectory, partial.file), partial.bytes, { flag: 'wx' })
+      }
+      await writeJson(path.join(runDirectory, 'response.json'), responseEvidence, { flag: 'wx' })
+      await writeJson(path.join(runDirectory, 'evidence.json'), evidence, { flag: 'wx' })
+    }
+
+    try {
+      await persistCompletedRun()
+    } catch (cause) {
+      if (cause?.code !== 'ENOENT') throw localArtifactWriteError(cause)
+      let runDirectoryMissing = false
+      try {
+        await fs.stat(runDirectory)
+      } catch (statError) {
+        if (statError?.code !== 'ENOENT') throw localArtifactWriteError(cause)
+        runDirectoryMissing = true
+      }
+      if (!runDirectoryMissing) throw localArtifactWriteError(cause)
+
+      evidence = {
+        ...evidence,
+        local_artifact_recovery: 'recreated_missing_run_directory',
+      }
+      try {
+        await persistCompletedRun({ recreate: true })
+      } catch (recoveryCause) {
+        throw localArtifactWriteError(recoveryCause)
+      }
+    }
     return { runDirectory, request: requestEvidence, response: responseEvidence, evidence }
   } catch (cause) {
     if (cause?.code === 'ERR_FS_EISDIR') throw cause
+    if (cause?.code === 'local_artifact_write_failed') {
+      throw Object.assign(cause, {
+        disposition: 'result_received',
+        evidenceSaved: false,
+        providerRequestId,
+        runId: id,
+        runDirectory,
+      })
+    }
     const evidencePath = path.join(runDirectory, 'evidence.json')
+    let evidenceSaved = false
     try {
       await writeJson(evidencePath, {
         schema_version: 1,
@@ -473,10 +547,12 @@ async function executeImageEdit({
         http_status: response.status,
         error: { code: cleanText(cause?.code) || 'openai_invalid_response', message: cleanText(cause?.message) },
       }, { flag: 'wx' })
+      evidenceSaved = true
     } catch { /* preserve the original response-validation failure */ }
     throw Object.assign(new Error(cause?.message || 'OpenAI response was invalid.'), {
       code: cause?.code || 'openai_invalid_response',
       disposition: 'result_received',
+      evidenceSaved,
       providerRequestId,
       runId: id,
       runDirectory,
