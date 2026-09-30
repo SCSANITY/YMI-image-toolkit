@@ -21,6 +21,7 @@ async function main() {
   await sharp({
     create: { width: 900, height: 600, channels: 4, background: { r: 33, g: 120, b: 164, alpha: 1 } },
   }).png().toFile(fixturePath)
+  const historyPreviewUrl = await createPreviewDataUrl(fixturePath)
   ipcMain.handle('prompt-lab:boot', () => ({
     capabilities: publicCapabilities(),
     apiKeyLoaded: false,
@@ -28,6 +29,24 @@ async function main() {
     defaultOutputRoot: path.join(os.tmpdir(), 'YMI Prompt Lab Visual Smoke'),
   }))
   ipcMain.handle('prompt-lab:pick-images', () => [fixturePath])
+  ipcMain.handle('prompt-lab:list-history', () => [{
+    runId: '2026-09-30_12-00-00-000_abcdef',
+    createdAt: '2026-09-30T12:00:00.000Z',
+    completedAt: '2026-09-30T12:00:12.000Z',
+    experimentName: 'Visual history fixture',
+    prompt: 'Visual smoke prompt',
+    result: 'success',
+    model: 'gpt-image-test',
+    size: '1024x1024',
+    quality: 'medium',
+    outputFormat: 'png',
+    providerTimingMs: 12000,
+    calculatedChargeUsd: 0.04,
+    providerRequestId: 'req_visual',
+    transportCalls: 1,
+    folderAvailable: false,
+    outputs: [{ file: 'output-01.png', format: 'png', width: 900, height: 600, byte_count: 1, sha256: 'ABC', previewUrl: historyPreviewUrl, previewError: null }],
+  }])
   ipcMain.handle('prompt-lab:inspect-image', async (_event, filePath, options) => {
     const inspected = await inspectImage(filePath, options)
     return {
@@ -77,6 +96,9 @@ async function main() {
     backgroundColor: getComputedStyle(document.body).backgroundColor,
     imageOnlyCopy: document.body.innerText.includes('Images-only output') && document.body.innerText.includes('containing images only'),
     canvasVisible: Boolean(document.querySelector('.result-canvas')),
+    historyVisible: document.body.innerText.includes('Recent generations') && document.body.innerText.includes('Visual history fixture'),
+    canvasAspectRatio: getComputedStyle(document.querySelector('.result-canvas')).aspectRatio,
+    resultObjectFit: getComputedStyle(document.querySelector('.result-canvas > img') || document.createElement('img')).objectFit,
   })`)
   assert.equal(initial.title, 'YMI Image Prompt Lab')
   assert.equal(initial.h1, 'Image Prompt Lab')
@@ -89,6 +111,8 @@ async function main() {
   assert.notEqual(initial.backgroundColor, 'rgb(10, 15, 21)')
   assert.equal(initial.imageOnlyCopy, true)
   assert.equal(initial.canvasVisible, true)
+  assert.equal(initial.historyVisible, true)
+  assert.equal(initial.canvasAspectRatio, '1 / 1')
   assert.ok(initial.buttons.includes('Validate / dry run'))
   assert.ok(initial.buttons.includes('Send one paid request'))
 
@@ -113,6 +137,27 @@ async function main() {
   assert.ok(inputPreview.naturalWidth > 0)
   assert.ok(inputPreview.naturalHeight > 0)
 
+  await win.webContents.executeJavaScript(`document.querySelector('.history-card').click()`)
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  const historyResult = await win.webContents.executeJavaScript(`(() => {
+    const canvas = document.querySelector('.result-canvas')
+    const image = canvas.querySelector('img')
+    const canvasRect = canvas.getBoundingClientRect()
+    return {
+      objectFit: getComputedStyle(image).objectFit,
+      canvasWidth: Math.round(canvasRect.width),
+      canvasHeight: Math.round(canvasRect.height),
+      naturalWidth: image.naturalWidth,
+      naturalHeight: image.naturalHeight,
+      runDetailsAvailable: document.body.innerText.includes('Run details'),
+    }
+  })()`)
+  assert.equal(historyResult.objectFit, 'contain')
+  assert.equal(historyResult.canvasWidth, historyResult.canvasHeight)
+  assert.ok(historyResult.canvasWidth <= 442)
+  assert.deepEqual([historyResult.naturalWidth, historyResult.naturalHeight], [768, 512])
+  assert.equal(historyResult.runDetailsAvailable, true)
+
   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find((button) => button.textContent.includes('Advanced controls')).click()`)
   const advanced = await win.webContents.executeJavaScript(`({
     fidelity: Array.from(document.querySelectorAll('.field-label')).some((label) => label.textContent === 'Input fidelity'),
@@ -127,7 +172,7 @@ async function main() {
 
   const image = await win.webContents.capturePage()
   await fs.writeFile(screenshotPath, image.toPNG())
-  process.stdout.write(`${JSON.stringify({ result: 'pass', screenshotPath, consoleErrors: errors.length, initial, inputPreview, advanced }, null, 2)}\n`)
+  process.stdout.write(`${JSON.stringify({ result: 'pass', screenshotPath, consoleErrors: errors.length, initial, inputPreview, historyResult, advanced }, null, 2)}\n`)
   win.destroy()
   await fs.rm(fixtureRoot, { recursive: true, force: true })
   app.quit()

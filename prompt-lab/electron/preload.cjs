@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('promptLab', {
   inspectImage: (filePath, options) => ipcRenderer.invoke('prompt-lab:inspect-image', filePath, options),
   validate: (request) => ipcRenderer.invoke('prompt-lab:validate', request),
   execute: (request) => ipcRenderer.invoke('prompt-lab:execute', request),
+  listHistory: () => ipcRenderer.invoke('prompt-lab:list-history'),
   exportConfig: (config) => ipcRenderer.invoke('prompt-lab:export-config', config),
   importConfig: () => ipcRenderer.invoke('prompt-lab:import-config'),
   openRunFolder: (runId) => ipcRenderer.invoke('prompt-lab:open-run-folder', runId),

@@ -16,6 +16,11 @@ function formatUsd(value) {
   return typeof value === 'number' ? `$${value.toFixed(6)}` : 'not reported'
 }
 
+function formatHistoryDate(value) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Date unavailable' : date.toLocaleString()
+}
+
 function loadJson(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback } catch { return fallback }
 }
@@ -42,6 +47,9 @@ function App() {
   const [dryRun, setDryRun] = useState(null)
   const [result, setResult] = useState(null)
   const [selectedOutputIndex, setSelectedOutputIndex] = useState(0)
+  const [history, setHistory] = useState([])
+  const [selectedHistory, setSelectedHistory] = useState(null)
+  const [historyBusy, setHistoryBusy] = useState(false)
   const [presets, setPresets] = useState(() => loadJson(PRESETS_KEY, []))
   const [keyDraft, setKeyDraft] = useState('')
   const [keyBusy, setKeyBusy] = useState(false)
@@ -54,6 +62,14 @@ function App() {
       setOutputRoot(value.defaultOutputRoot)
     })
   }, [])
+
+  const refreshHistory = useCallback(async () => {
+    setHistoryBusy(true)
+    try { setHistory(await api.listHistory()) } catch { /* History must not block generation. */ }
+    finally { setHistoryBusy(false) }
+  }, [])
+
+  useEffect(() => { if (api) refreshHistory() }, [refreshHistory])
 
   useEffect(() => { if (settings) localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)) }, [settings])
 
@@ -83,6 +99,7 @@ function App() {
       setImages((current) => [...current, ...next])
       setDryRun(null)
       setResult(null)
+      setSelectedHistory(null)
       setNotice(null)
     }
     if (paths.length > remaining) setNotice({ tone: 'warning', text: 'The Images Edit API accepts at most 16 inputs.' })
@@ -136,13 +153,14 @@ function App() {
         const requestNote = response.error.providerRequestId ? ` Provider request ID: ${response.error.providerRequestId}.` : ''
         return setNotice({ tone: ['outcome_unknown', 'result_received'].includes(response.error.disposition) ? 'warning' : 'error', text: `${response.error.message}${evidenceNote}${requestNote}` })
       }
-      setResult(response.result); setSelectedOutputIndex(0); setDryRun(response.result.request)
+      setResult(response.result); setSelectedHistory(null); setSelectedOutputIndex(0); setDryRun(response.result.request)
+      refreshHistory()
       const missing = response.result.outputs.filter((output) => !output.previewUrl).length
       if (!response.result.localArtifactsAvailable) setNotice({ tone: 'warning', text: 'The request completed, but its local image files could not be verified. Do not resend automatically.' })
       else if (missing) setNotice({ tone: 'warning', text: `One request completed and its images were saved. ${missing} preview(s) could not be displayed; use Open image folder.` })
       else setNotice({ tone: 'success', text: 'One request completed. Your image folder contains images only.' })
     } finally { setBusy(false) }
-  }, [request])
+  }, [refreshHistory, request])
 
   const savePreset = useCallback(() => {
     if (!prompt.trim()) return setNotice({ tone: 'warning', text: 'Enter a prompt before saving a preset.' })
@@ -205,7 +223,16 @@ function App() {
 
   const model = boot.capabilities.models.find((item) => item.id === settings.model)
   const compressionEnabled = settings.output_format === 'jpeg' || settings.output_format === 'webp'
-  const selectedOutput = result?.outputs?.[selectedOutputIndex] || result?.outputs?.[0] || null
+  const displayOutputs = selectedHistory?.outputs || result?.outputs || []
+  const selectedOutput = displayOutputs[selectedOutputIndex] || displayOutputs[0] || null
+  const displayEvidence = selectedHistory ? {
+    provider_timing_ms: selectedHistory.providerTimingMs,
+    calculated_charge_usd: selectedHistory.calculatedChargeUsd,
+    provider_request_id: selectedHistory.providerRequestId,
+    transport_calls: selectedHistory.transportCalls,
+  } : result?.evidence
+  const displayRunId = selectedHistory?.runId || result?.runId || null
+  const displayFolderAvailable = selectedHistory ? selectedHistory.folderAvailable : Boolean(result)
 
   return (
     <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={dropImages}>
@@ -228,19 +255,22 @@ function App() {
           <div className="sidebar-divider" />
           <div className="section-heading compact"><div><span className="section-kicker">Library</span><h2>Prompt presets</h2></div></div>
           {presets.length ? <div className="preset-list">{presets.slice(0, 8).map((preset) => <div className="preset" key={preset.id}><button type="button" className="preset-load" onClick={() => { setExperimentName(preset.name); setPrompt(preset.prompt); setSettings((current) => ({ ...current, ...preset.settings })); setDryRun(null) }}><strong>{preset.name}</strong><span>{new Date(preset.savedAt).toLocaleDateString()}</span></button><button type="button" className="icon-button" aria-label={`Delete ${preset.name}`} onClick={() => deletePreset(preset.id)}>×</button></div>)}</div> : <p className="empty-copy">Saved prompts will appear here.</p>}
+          <div className="sidebar-divider" />
+          <div className="section-heading compact"><div><span className="section-kicker">History</span><h2>Recent generations</h2></div><button type="button" className="text-button" onClick={refreshHistory} disabled={historyBusy}>{historyBusy ? 'Loading…' : 'Refresh'}</button></div>
+          {history.length ? <div className="history-list">{history.map((entry) => <button type="button" className={`history-card ${selectedHistory?.runId === entry.runId ? 'selected' : ''}`} key={entry.runId} onClick={() => { setSelectedHistory(entry); setSelectedOutputIndex(0) }}><span className="history-thumb">{entry.outputs[0]?.previewUrl ? <img src={entry.outputs[0].previewUrl} alt="" /> : <span>—</span>}</span><span className="history-copy"><strong>{entry.experimentName}</strong><span>{entry.size} · {entry.quality}</span><small>{formatHistoryDate(entry.completedAt || entry.createdAt)}</small></span></button>)}</div> : <p className="empty-copy">Completed generations will appear here.</p>}
         </aside>
 
         <section className="studio-column" aria-label="Image generation workspace">
           <div className="canvas-surface workspace-surface">
-            <div className="canvas-toolbar"><div><span className="section-kicker">Result canvas</span><h2>{selectedOutput ? selectedOutput.file : 'Ready when you are'}</h2></div>{result ? <button type="button" className="small-action" onClick={() => api.openRunFolder(result.runId)}>Open image folder</button> : null}</div>
-            <div className={`result-canvas ${selectedOutput?.previewUrl ? 'has-image' : ''}`}>
+            <div className="canvas-toolbar"><div><span className="section-kicker">Result canvas</span><h2>{selectedOutput ? selectedOutput.file : 'Ready when you are'}</h2></div>{displayRunId && displayFolderAvailable ? <button type="button" className="small-action" onClick={() => api.openRunFolder(displayRunId)}>Open image folder</button> : null}</div>
+            <div className="result-stage"><div className={`result-canvas ${selectedOutput?.previewUrl ? 'has-image' : ''}`}>
               {busy ? <div className="canvas-empty busy-state"><span className="spinner" /><strong>Creating your image…</strong><p>One provider request. No automatic retry.</p></div>
                 : selectedOutput?.previewUrl ? <img src={selectedOutput.previewUrl} alt={`Generated output ${selectedOutput.file}`} />
                   : selectedOutput ? <div className="canvas-empty"><span className="empty-symbol">!</span><strong>Preview unavailable</strong><p>The image may still be available in the image folder.</p></div>
                     : <div className="canvas-empty"><span className="empty-symbol">✦</span><strong>Your generated image will appear here</strong><p>Add source images, write a prompt, then validate or generate.</p></div>}
-            </div>
-            {result?.outputs?.length > 1 ? <div className="output-filmstrip" aria-label="Generated outputs">{result.outputs.map((output, index) => <button type="button" key={output.file} className={index === selectedOutputIndex ? 'selected' : ''} onClick={() => setSelectedOutputIndex(index)}>{output.previewUrl ? <img src={output.previewUrl} alt="" /> : <span>!</span>}<small>{index + 1}</small></button>)}</div> : null}
-            {result ? <details className="run-details"><summary>Run details</summary><div className="detail-grid"><div><span>Provider time</span><strong>{(result.evidence.provider_timing_ms / 1000).toFixed(2)} s</strong></div><div><span>Calculated charge</span><strong>{formatUsd(result.evidence.calculated_charge_usd)}</strong></div><div><span>Request ID</span><strong>{result.evidence.provider_request_id || 'not reported'}</strong></div><div><span>Transport calls</span><strong>{result.evidence.transport_calls}</strong></div>{selectedOutput ? <div><span>Image</span><strong>{selectedOutput.width}×{selectedOutput.height} · {formatBytes(selectedOutput.byte_count)}</strong></div> : null}</div></details> : null}
+            </div></div>
+            {displayOutputs.length > 1 ? <div className="output-filmstrip" aria-label="Generated outputs">{displayOutputs.map((output, index) => <button type="button" key={output.file} className={index === selectedOutputIndex ? 'selected' : ''} onClick={() => setSelectedOutputIndex(index)}>{output.previewUrl ? <img src={output.previewUrl} alt="" /> : <span>!</span>}<small>{index + 1}</small></button>)}</div> : null}
+            {displayEvidence ? <details className="run-details"><summary>Run details</summary><div className="detail-grid">{selectedHistory ? <><div><span>Model</span><strong>{selectedHistory.model}</strong></div><div><span>Settings</span><strong>{selectedHistory.size} · {selectedHistory.quality}</strong></div></> : null}<div><span>Provider time</span><strong>{typeof displayEvidence.provider_timing_ms === 'number' ? `${(displayEvidence.provider_timing_ms / 1000).toFixed(2)} s` : 'not reported'}</strong></div><div><span>Calculated charge</span><strong>{formatUsd(displayEvidence.calculated_charge_usd)}</strong></div><div><span>Request ID</span><strong>{displayEvidence.provider_request_id || 'not reported'}</strong></div><div><span>Transport calls</span><strong>{displayEvidence.transport_calls ?? 'not reported'}</strong></div>{selectedOutput ? <div><span>Image</span><strong>{selectedOutput.width}×{selectedOutput.height} · {formatBytes(selectedOutput.byte_count)}</strong></div> : null}</div>{selectedHistory?.prompt ? <div className="history-prompt"><span>Prompt</span><p>{selectedHistory.prompt}</p></div> : null}</details> : null}
           </div>
 
           <div className="prompt-composer workspace-surface">
@@ -255,8 +285,8 @@ function App() {
           <Field label="Model"><select value={settings.model} onChange={(event) => update('model', event.target.value)}>{boot.capabilities.models.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}</select></Field>
           {!model?.pinned ? <div className="inline-warning">Use a dated snapshot for reproducible comparisons.</div> : null}
           <div className="field-grid">
-            <Field label="Size"><select aria-label="Size preset" value={SIZE_PRESETS.includes(settings.size) ? settings.size : 'custom'} onChange={(event) => update('size', event.target.value === 'custom' ? '' : event.target.value)}><option value="1024x1024">1024×1024</option><option value="2048x2048">2048×2048</option><option value="1536x1024">1536×1024</option><option value="1024x1536">1024×1536</option><option value="auto">Auto</option><option value="custom">Custom…</option></select>{!SIZE_PRESETS.includes(settings.size) ? <input aria-label="Custom size" value={settings.size} onChange={(event) => update('size', event.target.value)} placeholder="1280x1280" /> : null}</Field>
-            <Field label="Quality"><select value={settings.quality} onChange={(event) => update('quality', event.target.value)}>{boot.capabilities.qualities.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field>
+            <Field label="Size" hint="Output pixel dimensions"><select aria-label="Size preset" value={SIZE_PRESETS.includes(settings.size) ? settings.size : 'custom'} onChange={(event) => update('size', event.target.value === 'custom' ? '' : event.target.value)}><option value="1024x1024">1024×1024</option><option value="2048x2048">2048×2048</option><option value="1536x1024">1536×1024</option><option value="1024x1536">1024×1536</option><option value="auto">Auto</option><option value="custom">Custom…</option></select>{!SIZE_PRESETS.includes(settings.size) ? <input aria-label="Custom size" value={settings.size} onChange={(event) => update('size', event.target.value)} placeholder="1280x1280" /> : null}</Field>
+            <Field label="Quality" hint="Rendering effort and detail"><select value={settings.quality} onChange={(event) => update('quality', event.target.value)}>{boot.capabilities.qualities.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field>
             <Field label="Format"><select value={settings.output_format} onChange={(event) => update('output_format', event.target.value)}>{boot.capabilities.outputFormats.map((value) => <option value={value} key={value}>{value.toUpperCase()}</option>)}</select></Field>
             <Field label="Background"><select value={settings.background} onChange={(event) => update('background', event.target.value)}>{boot.capabilities.backgrounds.map((value) => <option value={value} key={value}>{value}</option>)}</select></Field>
             <Field label="Outputs" hint="1–10"><input type="number" min="1" max="10" value={settings.n} onChange={(event) => update('n', Number(event.target.value))} /></Field>

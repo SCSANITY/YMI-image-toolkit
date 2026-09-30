@@ -76,6 +76,26 @@ async function connectCdp(url) {
   }
 }
 
+async function waitForPromptLabUi(page, timeoutMs = 10_000) {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    const evaluated = await page.call('Runtime.evaluate', {
+      expression: `({
+        title: document.title,
+        h1: document.querySelector('h1')?.textContent,
+        bodyLength: document.body.innerText.trim().length,
+        apiKeyInputType: document.querySelector('input[aria-label="OpenAI API key"]')?.type,
+        keyMissing: document.body.innerText.includes('API key missing'),
+        viteOverlays: document.querySelectorAll('.vite-error-overlay').length,
+      })`,
+      returnByValue: true,
+    })
+    if (evaluated.result.value?.h1 === 'Image Prompt Lab') return evaluated.result.value
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error('Packaged Prompt Lab UI did not finish booting.')
+}
+
 async function waitForExit(child, timeoutMs = 8_000) {
   if (child.exitCode !== null) return child.exitCode
   return Promise.race([
@@ -109,18 +129,7 @@ async function main() {
   try {
     const target = await waitForPageTarget(port)
     page = await connectCdp(target.webSocketDebuggerUrl)
-    const evaluated = await page.call('Runtime.evaluate', {
-      expression: `({
-        title: document.title,
-        h1: document.querySelector('h1')?.textContent,
-        bodyLength: document.body.innerText.trim().length,
-        apiKeyInputType: document.querySelector('input[aria-label="OpenAI API key"]')?.type,
-        keyMissing: document.body.innerText.includes('API key missing'),
-        viteOverlays: document.querySelectorAll('.vite-error-overlay').length,
-      })`,
-      returnByValue: true,
-    })
-    const state = evaluated.result.value
+    const state = await waitForPromptLabUi(page)
     assert.deepEqual(state, {
       title: 'YMI Image Prompt Lab',
       h1: 'Image Prompt Lab',

@@ -36,6 +36,13 @@ process and returned as `data:` URLs. The renderer never receives a `file://`
 URL, so previews work under the development server's HTTP origin without
 granting the page direct local-file access.
 
+The app lists up to 50 recent internal run records. A record exposes only a
+fixed set of local UI fields (experiment, prompt, model, size, quality, timing,
+charge and output metadata) and bounded image previews. Raw evidence and local
+paths stay in the main process. Older runs in the default image destination are
+discovered automatically; new runs also receive a private internal locator so
+custom image destinations can be reopened after an app restart.
+
 Use **Validate / dry run** first. It validates the prompt, ordered images, mask
 and API controls but sends no request. **Send one paid request** opens a native
 confirmation showing model, size, quality, output count and the no-retry rule.
@@ -57,6 +64,10 @@ confirmation showing model, size, quality, output count and the no-retry rule.
 return base64 image data. The pinned Flare snapshot rejected `input_fidelity`
 during YMI's live evaluation, so its default is **Do not send**; low/high remain
 visible only for deliberate capability testing.
+
+`size` controls the output pixel dimensions and aspect ratio. `quality`
+controls rendering effort and detail. They are separate API inputs, although
+both can affect latency, token use and cost.
 
 Official references:
 

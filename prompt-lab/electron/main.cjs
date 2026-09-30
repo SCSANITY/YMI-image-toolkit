@@ -7,6 +7,7 @@ const { pathToFileURL } = require('node:url')
 const { publicCapabilities } = require('../core/contract.cjs')
 const { executeImageEdit, inspectImage, prepareRequest, publicRequest } = require('../core/runner.cjs')
 const { createApiKeyStore } = require('./apiKeyStore.cjs')
+const { createHistoryStore } = require('./historyStore.cjs')
 const { createExecuteHandler, createPreviewDataUrl, errorResult } = require('./promptLabHandlers.cjs')
 const { createRunRegistry } = require('./runRegistry.cjs')
 
@@ -21,6 +22,7 @@ app.enableSandbox()
 
 let mainWindow = null
 let apiKeyStore = null
+let historyStore = null
 const runRegistry = createRunRegistry()
 
 function isAllowedNavigation(url) {
@@ -211,6 +213,7 @@ function registerIpcHandlers() {
     getApiKey: loadApiKey,
     getEvidenceRoot: () => path.join(app.getPath('userData'), 'prompt-lab-run-records'),
     registerRunDirectory: runRegistry.register,
+    recordCompletedRun: (result) => historyStore.recordCompletedRun(result),
     confirmRequest: async (event, prepared) => {
       assertTrustedEvent(event)
       const confirmed = await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender), {
@@ -233,6 +236,11 @@ function registerIpcHandlers() {
       return confirmed.response === 1
     },
   }))
+
+  ipcMain.handle('prompt-lab:list-history', async (event) => {
+    assertTrustedEvent(event)
+    return historyStore.listHistory()
+  })
 
   ipcMain.handle('prompt-lab:export-config', async (event, config) => {
     assertTrustedEvent(event)
@@ -283,6 +291,12 @@ function registerIpcHandlers() {
 
 app.whenReady().then(() => {
   apiKeyStore = createApiKeyStore({ safeStorage, userDataPath: app.getPath('userData') })
+  historyStore = createHistoryStore({
+    evidenceRoot: path.join(app.getPath('userData'), 'prompt-lab-run-records'),
+    defaultOutputRoot: path.join(app.getPath('documents'), 'YMI Prompt Lab Images'),
+    previewDataUrl: createPreviewDataUrl,
+    registerRunDirectory: runRegistry.register,
+  })
   registerIpcHandlers()
   createWindow()
   app.on('activate', () => {

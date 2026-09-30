@@ -87,6 +87,7 @@ function createExecuteHandler({
   getApiKey,
   getEvidenceRoot,
   registerRunDirectory = () => null,
+  recordCompletedRun = async () => null,
   previewDataUrl = createPreviewDataUrl,
 }) {
   let activeOwner = null
@@ -113,6 +114,13 @@ function createExecuteHandler({
       const evidenceRoot = await getEvidenceRoot()
       const result = await executeImageEdit({ ...request, evidenceRoot, apiKey })
       const runId = registerRunDirectory(result.outputDirectory, result.evidence?.run_id)
+      let historyRecorded = false
+      try {
+        await recordCompletedRun(result)
+        historyRecorded = true
+      } catch {
+        // History is a local convenience. A failure here must not misreport a paid request.
+      }
       const outputs = await Promise.all(result.evidence.outputs.map((output) => (
         mapOutputPreview(output, result.outputDirectory, previewDataUrl)
       )))
@@ -126,6 +134,7 @@ function createExecuteHandler({
           response: result.response,
           evidence: result.evidence,
           runId,
+          historyRecorded,
           localArtifactsAvailable: await verifyLocalArtifacts(result),
           outputs,
           partialOutputs,

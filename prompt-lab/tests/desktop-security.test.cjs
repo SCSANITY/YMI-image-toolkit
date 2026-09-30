@@ -29,6 +29,8 @@ test('desktop source pins sandbox, CSP, exact navigation and run-ID-only shell a
   assert.match(main, /runRegistry\.resolve\(runId\)/)
   assert.doesNotMatch(preload, /openPath|revealPath/)
   assert.match(preload, /openRunFolder/)
+  assert.match(preload, /listHistory/)
+  assert.doesNotMatch(preload, /evidenceRoot|evidenceDirectory|local-history/)
   assert.match(html, /Content-Security-Policy/)
   assert.match(html, /default-src 'self'/)
   assert.match(html, /object-src 'none'/)
