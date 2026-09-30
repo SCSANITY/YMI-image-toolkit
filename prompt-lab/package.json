@@ -1,0 +1,5 @@
+{
+  "name": "ymi-openai-image-prompt-lab",
+  "private": true,
+  "main": "electron/main.cjs"
+}

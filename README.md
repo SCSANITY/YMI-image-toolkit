@@ -8,6 +8,20 @@ general-purpose converter. Everything runs locally: nothing is uploaded anywhere
 
 Powered by [sharp](https://sharp.pixelplumbing.com/) (libvips) in an Electron shell.
 
+## OpenAI Image Prompt Lab
+
+This repository also contains an isolated operator-only Prompt Lab under
+`prompt-lab/`. It reuses the Electron/React toolchain but does not share the
+image conversion pipeline or write into production systems. Start it with:
+
+```powershell
+.\prompt-lab\START_PROMPT_LAB.ps1
+```
+
+See [`prompt-lab/README.md`](prompt-lab/README.md) for its supported Images Edit
+controls, single-request/no-retry contract, local evidence layout and offline
+verification commands.
+
 ## Download
 
 Grab the latest installer from the [Releases](../../releases) page —

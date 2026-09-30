@@ -2,6 +2,8 @@ node_modules/
 dist/
 dist-web/
 release/
+prompt-lab/dist/
+prompt-lab/runs/
 *.log
 .DS_Store
 Thumbs.db

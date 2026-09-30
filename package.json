@@ -12,6 +12,10 @@
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"vite --configLoader native\" \"wait-on tcp:5175 && electron .\"",
+    "prompt-lab": "concurrently -k \"vite --config prompt-lab/vite.config.mjs --configLoader native\" \"wait-on tcp:5176 && electron prompt-lab\"",
+    "prompt-lab:build": "vite build --config prompt-lab/vite.config.mjs --configLoader native",
+    "prompt-lab:smoke": "powershell -NoProfile -ExecutionPolicy Bypass -File prompt-lab/tests/run-visual-smoke.ps1",
+    "prompt-lab:test": "node --require ./prompt-lab/tests/network-guard.cjs --test prompt-lab/tests/*.test.cjs",
     "build:web": "vite build --configLoader native",
     "build": "npm run build:web",
     "dist": "npm run build:web && electron-builder --win nsis",
