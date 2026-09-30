@@ -3,26 +3,11 @@
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs/promises')
-const { pathToFileURL } = require('node:url')
 const { publicCapabilities } = require('../core/contract.cjs')
 const { executeImageEdit, inspectImage, prepareRequest, publicRequest } = require('../core/runner.cjs')
+const { createExecuteHandler, createPreviewDataUrl, errorResult } = require('./promptLabHandlers.cjs')
 
 const isDev = !app.isPackaged
-let requestInFlight = false
-
-function errorResult(error) {
-  return {
-    ok: false,
-    error: {
-      code: String(error?.code || 'prompt_lab_error'),
-      message: String(error?.message || error || 'Unknown error'),
-      disposition: error?.disposition || null,
-      httpStatus: error?.httpStatus || null,
-      providerRequestId: error?.providerRequestId || null,
-      runDirectory: error?.runDirectory || null,
-    },
-  }
-}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -97,7 +82,7 @@ ipcMain.handle('prompt-lab:inspect-image', async (_event, filePath, options) => 
       ok: true,
       image: {
         path: image.path,
-        previewUrl: pathToFileURL(image.path).href,
+        previewUrl: await createPreviewDataUrl(image.bytes),
         name: image.name,
         byte_count: image.byte_count,
         sha256: image.sha256,
@@ -122,14 +107,11 @@ ipcMain.handle('prompt-lab:validate', async (_event, request) => {
   }
 })
 
-ipcMain.handle('prompt-lab:execute', async (event, request) => {
-  if (requestInFlight) return errorResult(Object.assign(new Error('A request is already running.'), { code: 'request_in_flight' }))
-  if (!String(process.env.OPENAI_API_KEY || '').trim()) {
-    return errorResult(Object.assign(new Error('Restart Prompt Lab from a terminal that has OPENAI_API_KEY loaded.'), { code: 'openai_api_key_missing' }))
-  }
-
-  try {
-    const prepared = await prepareRequest(request)
+ipcMain.handle('prompt-lab:execute', createExecuteHandler({
+  prepareRequest,
+  executeImageEdit,
+  getApiKey: () => process.env.OPENAI_API_KEY,
+  confirmRequest: async (event, prepared) => {
     const confirmed = await dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender), {
       type: 'warning',
       title: 'Send one paid OpenAI request?',
@@ -147,33 +129,9 @@ ipcMain.handle('prompt-lab:execute', async (event, request) => {
       cancelId: 0,
       noLink: true,
     })
-    if (confirmed.response !== 1) return { ok: false, cancelled: true }
-
-    requestInFlight = true
-    const result = await executeImageEdit({
-      ...request,
-      apiKey: process.env.OPENAI_API_KEY,
-    })
-    return {
-      ok: true,
-      result: {
-        ...result,
-        outputs: result.evidence.outputs.map((output) => ({
-          ...output,
-          previewUrl: pathToFileURL(path.join(result.runDirectory, output.file)).href,
-        })),
-        partialOutputs: result.evidence.partial_outputs.map((output) => ({
-          ...output,
-          previewUrl: pathToFileURL(path.join(result.runDirectory, output.file)).href,
-        })),
-      },
-    }
-  } catch (error) {
-    return errorResult(error)
-  } finally {
-    requestInFlight = false
-  }
-})
+    return confirmed.response === 1
+  },
+}))
 
 ipcMain.handle('prompt-lab:export-config', async (event, config) => {
   const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
