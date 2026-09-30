@@ -18,6 +18,16 @@ image conversion pipeline or write into production systems. Start it with:
 .\prompt-lab\START_PROMPT_LAB.ps1
 ```
 
+For a standalone Prompt Lab executable that can be launched without a terminal:
+
+```powershell
+npm run prompt-lab:dist
+```
+
+This creates a portable Windows x64 `.exe` under `prompt-lab\release\`. The
+Prompt Lab stores its replaceable OpenAI API key with Windows account
+encryption; it does not change the existing converter or its packaging.
+
 See [`prompt-lab/README.md`](prompt-lab/README.md) for its supported Images Edit
 controls, single-request/no-retry contract, local evidence layout and offline
 verification commands.

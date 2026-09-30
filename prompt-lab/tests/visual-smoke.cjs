@@ -12,6 +12,8 @@ const { createPreviewDataUrl } = require('../electron/promptLabHandlers.cjs')
 
 const screenshotPath = path.join(os.tmpdir(), 'ymi-prompt-lab-visual-smoke.png')
 
+app.enableSandbox()
+
 async function main() {
   await app.whenReady()
   const fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'ymi-prompt-lab-visual-'))
@@ -22,6 +24,7 @@ async function main() {
   ipcMain.handle('prompt-lab:boot', () => ({
     capabilities: publicCapabilities(),
     apiKeyLoaded: false,
+    apiKeyStatus: { configured: false, readable: true, source: null, errorCode: null },
     defaultOutputRoot: path.join(os.tmpdir(), 'YMI Prompt Lab Visual Smoke'),
   }))
   ipcMain.handle('prompt-lab:pick-images', () => [fixturePath])
@@ -52,7 +55,7 @@ async function main() {
       preload: path.join(__dirname, '..', 'electron', 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   })
   win.webContents.on('console-message', (details) => {
@@ -68,12 +71,14 @@ async function main() {
     buttons: Array.from(document.querySelectorAll('button')).map((button) => button.textContent.trim()),
     overlays: document.querySelectorAll('.vite-error-overlay').length,
     keyStatus: document.body.innerText.includes('API key missing'),
+    keyInput: document.querySelector('input[aria-label="OpenAI API key"]')?.type,
   })`)
   assert.equal(initial.title, 'YMI Image Prompt Lab')
   assert.equal(initial.h1, 'Image Prompt Lab')
   assert.ok(initial.bodyLength > 1000)
   assert.equal(initial.overlays, 0)
   assert.equal(initial.keyStatus, true)
+  assert.equal(initial.keyInput, 'password')
   assert.ok(initial.buttons.includes('Validate / dry run'))
   assert.ok(initial.buttons.includes('Send one paid request'))
 

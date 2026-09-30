@@ -58,14 +58,33 @@ function calculateChargeUsd(usage) {
   ).toFixed(6))
 }
 
-async function inspectImage(filePath, { isMask = false } = {}) {
-  const bytes = await fs.readFile(filePath)
-  const byteLimit = isMask ? MAX_MASK_BYTES : MAX_IMAGE_BYTES
-  if (bytes.length === 0 || bytes.length >= byteLimit) {
+async function readBoundedFile(filePath, byteLimit, { isMask = false, fsImpl = fs } = {}) {
+  let stats
+  try {
+    stats = await fsImpl.stat(filePath)
+  } catch (error) {
+    throw Object.assign(new Error(`${isMask ? 'Mask' : 'Image'} could not be read.`), {
+      code: isMask ? 'invalid_mask_path' : 'invalid_image_path',
+      cause: error,
+    })
+  }
+  if (!stats.isFile() || stats.size <= 0 || stats.size >= byteLimit) {
     throw Object.assign(new Error(`${isMask ? 'Mask' : 'Image'} must be non-empty and under ${byteLimit / 1024 / 1024} MB.`), {
       code: isMask ? 'invalid_mask_size' : 'invalid_image_size',
     })
   }
+  const bytes = await fsImpl.readFile(filePath)
+  if (bytes.length <= 0 || bytes.length >= byteLimit) {
+    throw Object.assign(new Error(`${isMask ? 'Mask' : 'Image'} must be non-empty and under ${byteLimit / 1024 / 1024} MB.`), {
+      code: isMask ? 'invalid_mask_size' : 'invalid_image_size',
+    })
+  }
+  return bytes
+}
+
+async function inspectImage(filePath, { isMask = false } = {}) {
+  const byteLimit = isMask ? MAX_MASK_BYTES : MAX_IMAGE_BYTES
+  const bytes = await readBoundedFile(filePath, byteLimit, { isMask })
   let metadata
   try {
     metadata = await sharp(bytes).metadata()
@@ -315,6 +334,7 @@ async function executeImageEdit({
     const error = Object.assign(new Error(evidence.error.message), {
       code: evidence.error.code,
       disposition: 'outcome_unknown',
+      runId: id,
       runDirectory,
       cause,
     })
@@ -347,6 +367,7 @@ async function executeImageEdit({
         code: evidence.error.code,
         disposition: 'outcome_unknown',
         providerRequestId,
+        runId: id,
         runDirectory,
         cause,
       })
@@ -376,6 +397,7 @@ async function executeImageEdit({
       disposition: 'conclusively_rejected',
       httpStatus: response.status,
       providerRequestId,
+      runId: id,
       runDirectory,
     })
   }
@@ -456,6 +478,7 @@ async function executeImageEdit({
       code: cause?.code || 'openai_invalid_response',
       disposition: 'result_received',
       providerRequestId,
+      runId: id,
       runDirectory,
       cause,
     })
@@ -472,6 +495,7 @@ module.exports = {
   parseSse,
   prepareRequest,
   publicRequest,
+  readBoundedFile,
   safeFileStem,
   sha256,
   validateOutput,

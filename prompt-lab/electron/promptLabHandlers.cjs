@@ -6,7 +6,7 @@ const sharp = require('sharp')
 const PREVIEW_MAX_DIMENSION = 768
 const PREVIEW_MAX_BYTES = 2 * 1024 * 1024
 
-function errorResult(error) {
+function errorResult(error, { runId = null } = {}) {
   return {
     ok: false,
     error: {
@@ -15,7 +15,7 @@ function errorResult(error) {
       disposition: error?.disposition || null,
       httpStatus: error?.httpStatus || null,
       providerRequestId: error?.providerRequestId || null,
-      runDirectory: error?.runDirectory || null,
+      runId,
     },
   }
 }
@@ -45,6 +45,7 @@ function createExecuteHandler({
   executeImageEdit,
   confirmRequest,
   getApiKey,
+  registerRunDirectory = () => null,
   previewDataUrl = createPreviewDataUrl,
 }) {
   let activeOwner = null
@@ -58,9 +59,9 @@ function createExecuteHandler({
     activeOwner = owner
 
     try {
-      const apiKey = String(getApiKey() || '').trim()
+      const apiKey = String(await getApiKey() || '').trim()
       if (!apiKey) {
-        return errorResult(Object.assign(new Error('Restart Prompt Lab from a terminal that has OPENAI_API_KEY loaded.'), {
+        return errorResult(Object.assign(new Error('Add an OpenAI API key in Prompt Lab before sending.'), {
           code: 'openai_api_key_missing',
         }))
       }
@@ -69,10 +70,14 @@ function createExecuteHandler({
       if (!await confirmRequest(event, prepared)) return { ok: false, cancelled: true }
 
       const result = await executeImageEdit({ ...request, apiKey })
+      const runId = registerRunDirectory(result.runDirectory, result.evidence?.run_id)
       return {
         ok: true,
         result: {
-          ...result,
+          request: result.request,
+          response: result.response,
+          evidence: result.evidence,
+          runId,
           outputs: await Promise.all(result.evidence.outputs.map(async (output) => ({
             ...output,
             previewUrl: await previewDataUrl(path.join(result.runDirectory, output.file)),
@@ -84,7 +89,11 @@ function createExecuteHandler({
         },
       }
     } catch (error) {
-      return errorResult(error)
+      let runId = null
+      if (error?.runDirectory) {
+        try { runId = registerRunDirectory(error.runDirectory, error.runId) } catch { /* keep failure response path-free */ }
+      }
+      return errorResult(error, { runId })
     } finally {
       if (activeOwner === owner) activeOwner = null
     }

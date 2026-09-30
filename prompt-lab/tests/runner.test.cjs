@@ -13,6 +13,7 @@ const {
   parseSse,
   prepareRequest,
   publicRequest,
+  readBoundedFile,
 } = require('../core/runner.cjs')
 
 async function fixture(t) {
@@ -44,6 +45,19 @@ function successPayload(output) {
     data: [{ b64_json: output.toString('base64') }],
   }
 }
+
+test('file size is rejected from metadata before bytes are read', async () => {
+  let reads = 0
+  const fsImpl = {
+    stat: async () => ({ isFile: () => true, size: 10_000 }),
+    readFile: async () => { reads += 1; return Buffer.alloc(10_000) },
+  }
+  await assert.rejects(
+    () => readBoundedFile('oversized.png', 10_000, { fsImpl }),
+    (error) => error.code === 'invalid_image_size',
+  )
+  assert.equal(reads, 0)
+})
 
 test('prepareRequest validates ordered inputs and mask without sending', async (t) => {
   const f = await fixture(t)

@@ -7,6 +7,9 @@ contextBridge.exposeInMainWorld('promptLab', {
     try { return webUtils.getPathForFile(file) || null } catch { return null }
   },
   boot: () => ipcRenderer.invoke('prompt-lab:boot'),
+  apiKeyStatus: () => ipcRenderer.invoke('prompt-lab:api-key-status'),
+  saveApiKey: (value) => ipcRenderer.invoke('prompt-lab:save-api-key', value),
+  removeApiKey: () => ipcRenderer.invoke('prompt-lab:remove-api-key'),
   pickImages: () => ipcRenderer.invoke('prompt-lab:pick-images'),
   pickMask: () => ipcRenderer.invoke('prompt-lab:pick-mask'),
   pickOutputRoot: (current) => ipcRenderer.invoke('prompt-lab:pick-output-root', current),
@@ -15,6 +18,5 @@ contextBridge.exposeInMainWorld('promptLab', {
   execute: (request) => ipcRenderer.invoke('prompt-lab:execute', request),
   exportConfig: (config) => ipcRenderer.invoke('prompt-lab:export-config', config),
   importConfig: () => ipcRenderer.invoke('prompt-lab:import-config'),
-  revealPath: (target) => ipcRenderer.invoke('prompt-lab:reveal-path', target),
-  openPath: (target) => ipcRenderer.invoke('prompt-lab:open-path', target),
+  openRunFolder: (runId) => ipcRenderer.invoke('prompt-lab:open-run-folder', runId),
 })

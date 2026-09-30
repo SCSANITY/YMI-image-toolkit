@@ -3,6 +3,7 @@ dist/
 dist-web/
 release/
 prompt-lab/dist/
+prompt-lab/release/
 prompt-lab/runs/
 *.log
 .DS_Store

@@ -39,6 +39,11 @@ h1 { margin: 5px 0 3px; font-size: clamp(31px, 3vw, 47px); line-height: 1; lette
 .notice.warning { color: #ffe0a3; border-color: rgba(243,197,107,.35); background: rgba(243,197,107,.08); }
 .notice.success { color: #a8efd1; border-color: rgba(112,213,168,.35); background: rgba(112,213,168,.08); }
 
+.api-key-panel { margin-bottom: 20px; display: grid; grid-template-columns: minmax(310px, .8fr) minmax(520px, 1.2fr); gap: 24px; align-items: end; }
+.api-key-panel .panel-title-row { margin-bottom: 0; }
+.api-key-controls { display: grid; grid-template-columns: minmax(260px, 1fr) auto auto; gap: 8px; align-items: center; }
+.api-key-controls input { min-width: 0; }
+
 .workspace { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(380px, .78fr); gap: 20px; align-items: start; }
 .column { min-width: 0; display: grid; gap: 20px; }
 .panel { border: 1px solid var(--line); background: linear-gradient(155deg, rgba(27,39,52,.96), rgba(15,23,32,.9)); box-shadow: 0 20px 60px rgba(0,0,0,.18); border-radius: 17px; padding: 20px; }
@@ -125,4 +130,5 @@ footer a { color: var(--accent); }
 @media (max-width: 1240px) {
   .workspace { grid-template-columns: minmax(0, 1fr) 400px; }
   .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .api-key-panel { grid-template-columns: 1fr; }
 }

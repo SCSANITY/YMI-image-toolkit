@@ -52,6 +52,8 @@ function App() {
   const [dryRun, setDryRun] = useState(null)
   const [result, setResult] = useState(null)
   const [presets, setPresets] = useState(() => loadJson(PRESETS_KEY, []))
+  const [keyDraft, setKeyDraft] = useState('')
+  const [keyBusy, setKeyBusy] = useState(false)
 
   useEffect(() => {
     if (!api) return
@@ -159,7 +161,7 @@ function App() {
         return
       }
       if (!response.ok) {
-        const suffix = response.error.runDirectory ? ` Evidence: ${response.error.runDirectory}` : ''
+        const suffix = response.error.runId ? ` Evidence was saved for run ${response.error.runId}.` : ''
         setNotice({
           tone: response.error.disposition === 'outcome_unknown' ? 'warning' : 'error',
           text: `${response.error.message}${suffix}`,
@@ -221,6 +223,46 @@ function App() {
     }
   }, [experimentName, prompt, settings])
 
+  const applyApiKeyStatus = useCallback((status) => {
+    setBoot((current) => current ? {
+      ...current,
+      apiKeyLoaded: Boolean(status?.configured && status?.readable),
+      apiKeyStatus: status,
+    } : current)
+  }, [])
+
+  const saveApiKey = useCallback(async () => {
+    setKeyBusy(true)
+    setNotice(null)
+    try {
+      const status = await api.saveApiKey(keyDraft)
+      setKeyDraft('')
+      applyApiKeyStatus(status)
+      setNotice({ tone: 'success', text: 'API key saved with Windows account encryption. It will be reused next time.' })
+    } catch (error) {
+      setNotice({ tone: 'error', text: error?.message || 'The API key could not be saved.' })
+    } finally {
+      setKeyBusy(false)
+    }
+  }, [applyApiKeyStatus, keyDraft])
+
+  const removeApiKey = useCallback(async () => {
+    setKeyBusy(true)
+    setNotice(null)
+    try {
+      const result = await api.removeApiKey()
+      applyApiKeyStatus(result.status)
+      if (result.removed) {
+        setKeyDraft('')
+        setNotice({ tone: 'success', text: 'The saved API key was removed from this Windows account.' })
+      }
+    } catch (error) {
+      setNotice({ tone: 'error', text: error?.message || 'The saved API key could not be removed.' })
+    } finally {
+      setKeyBusy(false)
+    }
+  }, [applyApiKeyStatus])
+
   const dropImages = useCallback((event) => {
     event.preventDefault()
     const paths = Array.from(event.dataTransfer.files).map((file) => api.pathForFile(file)).filter(Boolean)
@@ -251,6 +293,38 @@ function App() {
       </header>
 
       {notice ? <div className={`notice ${notice.tone}`}>{notice.text}</div> : null}
+
+      <section className="panel api-key-panel">
+        <div className="api-key-copy">
+          <div className="panel-title-row">
+            <div><span className="step">KEY</span><h2>OpenAI API key</h2></div>
+            <Pill tone={boot.apiKeyLoaded ? 'success' : 'warning'}>
+              {boot.apiKeyLoaded ? 'Ready' : boot.apiKeyStatus?.readable === false ? 'Needs replacement' : 'Not configured'}
+            </Pill>
+          </div>
+          <p className="section-copy">
+            Save once and Prompt Lab will reuse it. The key is encrypted for your Windows account and is never written to request evidence.
+          </p>
+        </div>
+        <div className="api-key-controls">
+          <input
+            type="password"
+            value={keyDraft}
+            onChange={(event) => setKeyDraft(event.target.value)}
+            placeholder={boot.apiKeyLoaded ? 'Paste a new key to replace the saved key' : 'Paste your OpenAI API key'}
+            autoComplete="new-password"
+            spellCheck="false"
+            aria-label="OpenAI API key"
+            disabled={keyBusy || busy}
+          />
+          <button type="button" className="secondary" onClick={saveApiKey} disabled={keyBusy || busy || !keyDraft.trim()}>
+            {boot.apiKeyLoaded ? 'Replace saved key' : 'Save key'}
+          </button>
+          {boot.apiKeyLoaded || boot.apiKeyStatus?.configured ? (
+            <button type="button" className="quiet" onClick={removeApiKey} disabled={keyBusy || busy}>Remove</button>
+          ) : null}
+        </div>
+      </section>
 
       <main className="workspace">
         <section className="column primary-column">
@@ -411,7 +485,7 @@ function App() {
               <button type="button" className="primary full" onClick={execute} disabled={busy || !boot.apiKeyLoaded}>
                 {busy ? 'Working…' : 'Send one paid request'}
               </button>
-              {!boot.apiKeyLoaded ? <small className="center-note">Start with <code>START_PROMPT_LAB.ps1</code> to load the key securely.</small> : null}
+              {!boot.apiKeyLoaded ? <small className="center-note">Save an API key above before sending. Dry run remains available without a key.</small> : null}
             </div>
           </div>
         </aside>
@@ -435,7 +509,7 @@ function App() {
         <section className="panel result-panel">
           <div className="panel-title-row">
             <div><span className="step">05</span><h2>Latest result</h2></div>
-            <button type="button" className="secondary" onClick={() => api.openPath(result.runDirectory)}>Open run folder</button>
+            <button type="button" className="secondary" onClick={() => api.openRunFolder(result.runId)}>Open run folder</button>
           </div>
           <div className="metrics">
             <div><span>Request ID</span><strong>{result.evidence.provider_request_id || 'not reported'}</strong></div>

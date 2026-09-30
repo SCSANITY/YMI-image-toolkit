@@ -1,0 +1,27 @@
+appId: com.ymi.image-prompt-lab
+productName: YMI Image Prompt Lab
+artifactName: YMI-Image-Prompt-Lab-${version}-portable.${ext}
+directories:
+  output: prompt-lab/release
+  buildResources: build
+files:
+  - prompt-lab/dist/**/*
+  - prompt-lab/electron/**/*
+  - prompt-lab/core/**/*
+  - build/icon.ico
+  - build/icon.png
+  - package.json
+extraMetadata:
+  name: ymi-image-prompt-lab
+  main: prompt-lab/electron/main.cjs
+asar: true
+asarUnpack:
+  - "**/node_modules/sharp/**"
+  - "**/node_modules/@img/**"
+win:
+  icon: build/icon.ico
+  signExecutable: false
+  target:
+    - target: portable
+      arch:
+        - x64
