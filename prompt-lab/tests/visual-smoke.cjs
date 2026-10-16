@@ -158,6 +158,33 @@ async function main() {
   assert.deepEqual([historyResult.naturalWidth, historyResult.naturalHeight], [768, 512])
   assert.equal(historyResult.runDetailsAvailable, true)
 
+  // Expanded details must follow the full image, stay inside the scroll surface,
+  // and remain reachable without covering the prompt composer.
+  const detailsLayouts = []
+  for (const [width, height] of [[1500, 960], [1120, 720]]) {
+    win.setSize(width, height)
+    await win.webContents.executeJavaScript(`document.querySelector('.run-details').open = true`)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const layout = await win.webContents.executeJavaScript(`(() => {
+      const surface = document.querySelector('.canvas-surface')
+      surface.scrollTop = surface.scrollHeight
+      const image = document.querySelector('.result-canvas').getBoundingClientRect()
+      const details = document.querySelector('.run-details').getBoundingClientRect()
+      const panel = surface.getBoundingClientRect()
+      const composer = document.querySelector('.prompt-composer').getBoundingClientRect()
+      const end = document.querySelector('.history-prompt').getBoundingClientRect()
+      return { imageBottom: image.bottom, detailsTop: details.top,
+        panelBottom: panel.bottom, composerTop: composer.top, endBottom: end.bottom,
+        overflowY: getComputedStyle(surface).overflowY }
+    })()`)
+    assert.ok(layout.detailsTop >= layout.imageBottom, 'Details must not overlap the image')
+    assert.ok(layout.panelBottom <= layout.composerTop, 'Result panel must not overlap composer')
+    assert.ok(layout.endBottom <= layout.panelBottom, 'Last detail must be reachable by scrolling')
+    assert.equal(layout.overflowY, 'auto')
+    detailsLayouts.push({ width, height, ...layout })
+  }
+  win.setSize(1500, 960)
+
   await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find((button) => button.textContent.includes('Advanced controls')).click()`)
   const advanced = await win.webContents.executeJavaScript(`({
     fidelity: Array.from(document.querySelectorAll('.field-label')).some((label) => label.textContent === 'Input fidelity'),
@@ -172,7 +199,7 @@ async function main() {
 
   const image = await win.webContents.capturePage()
   await fs.writeFile(screenshotPath, image.toPNG())
-  process.stdout.write(`${JSON.stringify({ result: 'pass', screenshotPath, consoleErrors: errors.length, initial, inputPreview, historyResult, advanced }, null, 2)}\n`)
+  process.stdout.write(`${JSON.stringify({ result: 'pass', screenshotPath, consoleErrors: errors.length, initial, inputPreview, historyResult, detailsLayouts, advanced }, null, 2)}\n`)
   win.destroy()
   await fs.rm(fixtureRoot, { recursive: true, force: true })
   app.quit()
