@@ -158,8 +158,7 @@ async function main() {
   assert.deepEqual([historyResult.naturalWidth, historyResult.naturalHeight], [768, 512])
   assert.equal(historyResult.runDetailsAvailable, true)
 
-  // Expanded details must follow the full image, stay inside the scroll surface,
-  // and remain reachable without covering the prompt composer.
+  // Expanded details and the complete image must fit without panel scrolling.
   const detailsLayouts = []
   for (const [width, height] of [[1500, 960], [1120, 720]]) {
     win.setSize(width, height)
@@ -167,7 +166,7 @@ async function main() {
     await new Promise((resolve) => setTimeout(resolve, 100))
     const layout = await win.webContents.executeJavaScript(`(() => {
       const surface = document.querySelector('.canvas-surface')
-      surface.scrollTop = surface.scrollHeight
+      surface.scrollTop = 0
       const image = document.querySelector('.result-canvas').getBoundingClientRect()
       const details = document.querySelector('.run-details').getBoundingClientRect()
       const panel = surface.getBoundingClientRect()
@@ -175,12 +174,15 @@ async function main() {
       const end = document.querySelector('.history-prompt').getBoundingClientRect()
       return { imageBottom: image.bottom, detailsTop: details.top,
         panelBottom: panel.bottom, composerTop: composer.top, endBottom: end.bottom,
-        overflowY: getComputedStyle(surface).overflowY }
+        imageTop: image.top, panelTop: panel.top,
+        scrollHeight: surface.scrollHeight, clientHeight: surface.clientHeight }
     })()`)
     assert.ok(layout.detailsTop >= layout.imageBottom, 'Details must not overlap the image')
     assert.ok(layout.panelBottom <= layout.composerTop, 'Result panel must not overlap composer')
-    assert.ok(layout.endBottom <= layout.panelBottom, 'Last detail must be reachable by scrolling')
-    assert.equal(layout.overflowY, 'auto')
+    assert.ok(layout.endBottom <= layout.panelBottom, 'Last detail must be visible without scrolling')
+    assert.ok(layout.imageTop >= layout.panelTop, 'Entire image must remain visible')
+    assert.ok(layout.imageBottom - layout.imageTop >= 160, 'Expanded details must retain a useful preview size')
+    assert.ok(layout.scrollHeight <= layout.clientHeight + 1, 'Panel must not need scrolling')
     detailsLayouts.push({ width, height, ...layout })
   }
   win.setSize(1500, 960)
