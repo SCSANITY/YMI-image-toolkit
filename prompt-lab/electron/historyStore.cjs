@@ -2,6 +2,7 @@
 
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { DEFAULT_SETTINGS } = require('../core/contract.cjs')
 
 const HISTORY_LOCATOR_FILE = 'local-history.json'
 const MAX_HISTORY_ITEMS = 50
@@ -52,6 +53,9 @@ function historyRecord({ request, evidence, outputs, folderAvailable }) {
     size: String(request?.parameters?.size || ''),
     quality: String(request?.parameters?.quality || ''),
     outputFormat: String(request?.parameters?.output_format || ''),
+    settings: Object.fromEntries(Object.keys(DEFAULT_SETTINGS)
+      .filter((key) => ['string', 'number', 'boolean'].includes(typeof request?.parameters?.[key]))
+      .map((key) => [key, request.parameters[key]])),
     providerTimingMs: numberOrNull(evidence?.provider_timing_ms),
     calculatedChargeUsd: numberOrNull(evidence?.calculated_charge_usd),
     providerRequestId: String(evidence?.provider_request_id || ''),

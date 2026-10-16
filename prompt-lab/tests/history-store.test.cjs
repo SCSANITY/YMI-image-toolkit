@@ -29,7 +29,7 @@ test('history returns only an allowlisted persistent run shape with image previe
     created_at: '2026-09-30T12:00:00.000Z',
     experiment_name: 'Cover test',
     prompt: 'Keep the illustration and change only the face.',
-    parameters: { model: 'gpt-image-test', size: '1024x1024', quality: 'medium', output_format: 'png' },
+    parameters: { model: 'gpt-image-test', size: '1024x1024', quality: 'medium', output_format: 'png', apiKey: 'must-not-leak', timeout_ms: 180000, stream: false, size_metadata: { private: 'must-not-leak' } },
     ordered_inputs: [{ path: 'must-not-leak.png' }],
     secret_future_field: 'must-not-leak',
   })
@@ -59,12 +59,13 @@ test('history returns only an allowlisted persistent run shape with image previe
   assert.deepEqual(Object.keys(history[0]).sort(), [
     'calculatedChargeUsd', 'completedAt', 'createdAt', 'experimentName', 'folderAvailable',
     'model', 'outputFormat', 'outputs', 'prompt', 'providerRequestId', 'providerTimingMs',
-    'quality', 'result', 'runId', 'size', 'transportCalls',
+    'quality', 'result', 'runId', 'settings', 'size', 'transportCalls',
   ].sort())
   assert.deepEqual(Object.keys(history[0].outputs[0]).sort(), [
     'byte_count', 'file', 'format', 'height', 'previewError', 'previewUrl', 'sha256', 'width',
   ].sort())
   assert.equal(JSON.stringify(history).includes('must-not-leak'), false)
+  assert.deepEqual(history[0].settings, { model: 'gpt-image-test', size: '1024x1024', quality: 'medium', output_format: 'png', timeout_ms: 180000, stream: false })
   assert.equal(history[0].outputs[0].previewUrl.startsWith('data:image/webp;base64,'), true)
   assert.deepEqual(registered, [{ directory: outputDirectory, id: runId }])
 })

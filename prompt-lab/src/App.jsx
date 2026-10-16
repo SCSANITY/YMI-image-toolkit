@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import ImageViewer from './ImageViewer'
 
 const api = window.promptLab
 const PRESETS_KEY = 'ymi-prompt-lab-presets-v1'
 const SETTINGS_KEY = 'ymi-prompt-lab-settings-v1'
 const SIZE_PRESETS = ['1024x1024', '2048x2048', '1536x1024', '1024x1536', 'auto']
+const PHASES = { validating: 'Validating inputs…', confirming: 'Waiting for confirmation…', requesting: 'Waiting for OpenAI…', receiving: 'Receiving image data…', saving: 'Saving images…', previewing: 'Preparing previews…' }
 
 function formatBytes(value) {
   const bytes = Number(value) || 0
@@ -53,6 +55,21 @@ function App() {
   const [presets, setPresets] = useState(() => loadJson(PRESETS_KEY, []))
   const [keyDraft, setKeyDraft] = useState('')
   const [keyBusy, setKeyBusy] = useState(false)
+  const [phase, setPhase] = useState(null)
+  const [elapsed, setElapsed] = useState(0)
+  const [viewer, setViewer] = useState(null)
+  const [viewerBusy, setViewerBusy] = useState(false)
+
+  useEffect(() => api?.onProgress?.((value) => {
+    if (PHASES[value]) setPhase(value)
+  }), [])
+  useEffect(() => {
+    if (!busy) return
+    const started = performance.now()
+    setElapsed(0)
+    const timer = setInterval(() => setElapsed((performance.now() - started) / 1000), 100)
+    return () => clearInterval(timer)
+  }, [busy])
 
   useEffect(() => {
     if (!api) return
@@ -129,7 +146,7 @@ function App() {
 
   const validate = useCallback(async () => {
     if (!settings) return null
-    setBusy(true); setNotice(null)
+    setPhase('validating'); setBusy(true); setNotice(null)
     try {
       const response = await api.validate(request)
       if (!response.ok) {
@@ -142,7 +159,7 @@ function App() {
   }, [request, settings])
 
   const execute = useCallback(async () => {
-    setBusy(true); setNotice(null)
+    setPhase('validating'); setBusy(true); setNotice(null)
     try {
       const response = await api.execute(request)
       if (response.cancelled) return setNotice({ tone: 'neutral', text: 'Request cancelled before sending.' })
@@ -153,7 +170,7 @@ function App() {
         const requestNote = response.error.providerRequestId ? ` Provider request ID: ${response.error.providerRequestId}.` : ''
         return setNotice({ tone: ['outcome_unknown', 'result_received'].includes(response.error.disposition) ? 'warning' : 'error', text: `${response.error.message}${evidenceNote}${requestNote}` })
       }
-      setResult(response.result); setSelectedHistory(null); setSelectedOutputIndex(0); setDryRun(response.result.request)
+      setResult(response.result); setSelectedHistory(null); setSelectedOutputIndex(0); setDryRun(null)
       refreshHistory()
       const missing = response.result.outputs.filter((output) => !output.previewUrl).length
       if (!response.result.localArtifactsAvailable) setNotice({ tone: 'warning', text: 'The request completed, but its local image files could not be verified. Do not resend automatically.' })
@@ -233,9 +250,25 @@ function App() {
   } : result?.evidence
   const displayRunId = selectedHistory?.runId || result?.runId || null
   const displayFolderAvailable = selectedHistory ? selectedHistory.folderAvailable : Boolean(result)
+  const openOriginal = async () => {
+    setViewerBusy(true)
+    try {
+      const original = await api.viewOriginal(displayRunId, selectedOutput.file)
+      setViewer({ ...original, file: selectedOutput.file })
+    } catch { setNotice({ tone: 'error', text: 'The original image could not be opened. Check that the output file still exists and is under 50 MB.' }) }
+    finally { setViewerBusy(false) }
+  }
+  const reuseHistory = () => {
+    setExperimentName(selectedHistory.experimentName)
+    setPrompt(selectedHistory.prompt)
+    setSettings({ ...boot.capabilities.defaults, ...selectedHistory.settings })
+    setDryRun(null)
+    setNotice({ tone: 'success', text: 'Historical prompt and parameters loaded. Current input images, mask and output folder are unchanged; check them before sending.' })
+  }
 
   return (
     <div className="app-shell" onDragOver={(event) => event.preventDefault()} onDrop={dropImages}>
+      {viewer ? <ImageViewer image={viewer} onClose={() => setViewer(null)} /> : null}
       <header className="app-header">
         <div className="brand-lockup"><div className="brand-mark" aria-hidden="true">Y</div><div><div className="eyebrow">YMI creative workspace</div><h1>Image Prompt Lab</h1></div></div>
         <div className="status-stack"><Pill tone={boot.apiKeyLoaded ? 'success' : 'warning'}>{boot.apiKeyLoaded ? 'API key ready' : 'API key missing'}</Pill><Pill>One request at a time</Pill><Pill tone="image">Images-only output</Pill></div>
@@ -263,8 +296,9 @@ function App() {
         <section className="studio-column" aria-label="Image generation workspace">
           <div className="canvas-surface workspace-surface">
             <div className="canvas-toolbar"><div><span className="section-kicker">Result canvas</span><h2>{selectedOutput ? selectedOutput.file : 'Ready when you are'}</h2></div>{displayRunId && displayFolderAvailable ? <button type="button" className="small-action" onClick={() => api.openRunFolder(displayRunId)}>Open image folder</button> : null}</div>
+            <div className="result-actions">{selectedOutput && displayFolderAvailable ? <button type="button" onClick={openOriginal} disabled={busy || viewerBusy}>{viewerBusy ? 'Loading original…' : 'View original'}</button> : null}{selectedHistory ? <button type="button" onClick={reuseHistory} disabled={busy}>Reuse prompt & settings</button> : null}</div>
             <div className="result-stage"><div className={`result-canvas ${selectedOutput?.previewUrl ? 'has-image' : ''}`}>
-              {busy ? <div className="canvas-empty busy-state"><span className="spinner" /><strong>Creating your image…</strong><p>One provider request. No automatic retry.</p></div>
+              {busy ? <div className="canvas-empty busy-state"><span className="spinner" /><strong>{PHASES[phase] || 'Working…'}</strong><p>{elapsed.toFixed(1)} s elapsed · Includes local processing and confirmation</p></div>
                 : selectedOutput?.previewUrl ? <img src={selectedOutput.previewUrl} alt={`Generated output ${selectedOutput.file}`} />
                   : selectedOutput ? <div className="canvas-empty"><span className="empty-symbol">!</span><strong>Preview unavailable</strong><p>The image may still be available in the image folder.</p></div>
                     : <div className="canvas-empty"><span className="empty-symbol">✦</span><strong>Your generated image will appear here</strong><p>Add source images, write a prompt, then validate or generate.</p></div>}
@@ -276,7 +310,7 @@ function App() {
           <div className="prompt-composer workspace-surface">
             <div className="composer-topline"><Field label="Experiment name"><input value={experimentName} onChange={(event) => setExperimentName(event.target.value)} maxLength={120} /></Field><div className="composer-utility"><button type="button" className="text-button" onClick={importConfig} disabled={busy}>Import</button><button type="button" className="text-button" onClick={exportConfig} disabled={busy}>Export</button><button type="button" className="text-button" onClick={savePreset} disabled={busy}>Save preset</button></div></div>
             <label className="prompt-field"><span className="sr-only">Prompt</span><textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); setDryRun(null) }} rows={7} maxLength={boot.capabilities.limits.maxPromptChars} placeholder="Describe the identity change, who maps to each reference, and everything that must remain unchanged…" /></label>
-            <div className="composer-footer"><div className="composer-status"><span>{prompt.length.toLocaleString()} / {boot.capabilities.limits.maxPromptChars.toLocaleString()}</span>{dryRun ? <Pill tone="success">Validated · 0 requests sent</Pill> : <span>Validate before sending</span>}</div><div className="composer-actions"><button type="button" className="secondary" onClick={validate} disabled={busy}>Validate / dry run</button><button type="button" className="primary" onClick={execute} disabled={busy || !boot.apiKeyLoaded}>{busy ? 'Creating…' : 'Send one paid request'}</button></div></div>
+            <div className="composer-footer"><div className="composer-status"><span>{prompt.length.toLocaleString()} / {boot.capabilities.limits.maxPromptChars.toLocaleString()}</span>{busy ? <span role="status">{PHASES[phase]} · {elapsed.toFixed(1)} s</span> : dryRun ? <Pill tone="success">Dry run passed</Pill> : <span>Validate before sending</span>}</div><div className="composer-actions"><button type="button" className="secondary" onClick={validate} disabled={busy}>Validate / dry run</button><button type="button" className="primary" onClick={execute} disabled={busy || !boot.apiKeyLoaded}>{busy ? 'Working…' : 'Send one paid request'}</button></div></div>
           </div>
         </section>
 

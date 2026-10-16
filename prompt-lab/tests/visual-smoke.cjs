@@ -29,6 +29,10 @@ async function main() {
     defaultOutputRoot: path.join(os.tmpdir(), 'YMI Prompt Lab Visual Smoke'),
   }))
   ipcMain.handle('prompt-lab:pick-images', () => [fixturePath])
+  ipcMain.handle('prompt-lab:validate', async () => {
+    await new Promise(resolve => setTimeout(resolve, 600))
+    return { ok: true, request: { automatic_retry: false } }
+  })
   ipcMain.handle('prompt-lab:list-history', () => [{
     runId: '2026-09-30_12-00-00-000_abcdef',
     createdAt: '2026-09-30T12:00:00.000Z',
@@ -44,9 +48,11 @@ async function main() {
     calculatedChargeUsd: 0.04,
     providerRequestId: 'req_visual',
     transportCalls: 1,
-    folderAvailable: false,
+    folderAvailable: true,
+    settings: { ...publicCapabilities().defaults, quality: 'high' },
     outputs: [{ file: 'output-01.png', format: 'png', width: 900, height: 600, byte_count: 1, sha256: 'ABC', previewUrl: historyPreviewUrl, previewError: null }],
   }])
+  ipcMain.handle('prompt-lab:view-original', async () => ({ url: `data:image/png;base64,${(await fs.readFile(fixturePath)).toString('base64')}`, width: 900, height: 600 }))
   ipcMain.handle('prompt-lab:inspect-image', async (_event, filePath, options) => {
     const inspected = await inspectImage(filePath, options)
     return {
@@ -157,6 +163,30 @@ async function main() {
   assert.ok(historyResult.canvasWidth <= 442)
   assert.deepEqual([historyResult.naturalWidth, historyResult.naturalHeight], [768, 512])
   assert.equal(historyResult.runDetailsAvailable, true)
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Reuse prompt & settings').click()`)
+  await new Promise(resolve => setTimeout(resolve, 80))
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('textarea').value`), 'Visual smoke prompt')
+  assert.equal(await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('select')).some(s => s.value === 'high')`), true)
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'View original').click()`)
+  await new Promise(resolve => setTimeout(resolve, 150))
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('.image-viewer').open`), true)
+  const originalWidth = await win.webContents.executeJavaScript(`document.querySelector('.image-viewer img').naturalWidth`)
+  assert.equal(originalWidth, 900)
+  win.showInactive()
+  await new Promise(resolve => setTimeout(resolve, 250))
+  await fs.writeFile(path.join(os.tmpdir(), 'ymi-prompt-lab-viewer-smoke.png'), (await win.webContents.capturePage()).toPNG())
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.image-viewer button')).find(b => b.textContent === '100%').click()`)
+  await new Promise(resolve => setTimeout(resolve, 60))
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('.image-viewer img').getBoundingClientRect().width`), 900)
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('.image-viewer button')).find(b => b.textContent === 'Close').click()`)
+  await new Promise(resolve => setTimeout(resolve, 60))
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('.image-viewer') === null`), true)
+  await win.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Validate / dry run').click()`)
+  await new Promise(resolve => setTimeout(resolve, 250))
+  assert.match(await win.webContents.executeJavaScript(`document.querySelector('.composer-status').textContent`), /Validating inputs.*0\.[1-9] s/)
+  assert.equal(await win.webContents.executeJavaScript(`document.body.innerText.includes('Creating your image')`), false)
+  await new Promise(resolve => setTimeout(resolve, 450))
+  assert.equal(await win.webContents.executeJavaScript(`document.body.innerText.includes('Dry run passed')`), true)
 
   // Expanded details and the complete image must fit without panel scrolling.
   const detailsLayouts = []

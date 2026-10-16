@@ -3,6 +3,16 @@
 const path = require('node:path')
 const fs = require('node:fs/promises')
 const sharp = require('sharp')
+const { inspectImage } = require('../core/runner.cjs')
+
+async function readOriginalImage(registry, runId, file) {
+  if (!/^output-\d{2}\.(png|jpg|webp)$/.test(String(file))) throw new Error('Invalid output image.')
+  const directory = await fs.realpath(registry.resolve(runId))
+  const target = await fs.realpath(path.join(directory, file))
+  if (path.dirname(target) !== directory) throw new Error('Image is outside its run folder.')
+  const image = await inspectImage(target)
+  return { url: `data:${image.mime_type};base64,${image.bytes.toString('base64')}`, width: image.width, height: image.height }
+}
 
 const PREVIEW_MAX_DIMENSION = 768
 const PREVIEW_MAX_BYTES = 2 * 1024 * 1024
@@ -89,6 +99,7 @@ function createExecuteHandler({
   registerRunDirectory = () => null,
   recordCompletedRun = async () => null,
   previewDataUrl = createPreviewDataUrl,
+  reportProgress = () => {},
 }) {
   let activeOwner = null
 
@@ -108,11 +119,13 @@ function createExecuteHandler({
         }))
       }
 
+      reportProgress(event, 'validating')
       const prepared = await prepareRequest(request)
+      reportProgress(event, 'confirming')
       if (!await confirmRequest(event, prepared)) return { ok: false, cancelled: true }
 
       const evidenceRoot = await getEvidenceRoot()
-      const result = await executeImageEdit({ ...request, evidenceRoot, apiKey })
+      const result = await executeImageEdit({ ...request, evidenceRoot, apiKey, onProgress: (phase) => reportProgress(event, phase) })
       const runId = registerRunDirectory(result.outputDirectory, result.evidence?.run_id)
       let historyRecorded = false
       try {
@@ -121,6 +134,7 @@ function createExecuteHandler({
       } catch {
         // History is a local convenience. A failure here must not misreport a paid request.
       }
+      reportProgress(event, 'previewing')
       const outputs = await Promise.all(result.evidence.outputs.map((output) => (
         mapOutputPreview(output, result.outputDirectory, previewDataUrl)
       )))
@@ -149,6 +163,7 @@ function createExecuteHandler({
 }
 
 module.exports = {
+  readOriginalImage,
   PREVIEW_MAX_BYTES,
   PREVIEW_MAX_DIMENSION,
   createExecuteHandler,

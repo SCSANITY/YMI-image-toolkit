@@ -278,6 +278,7 @@ async function executeImageEdit({
   apiKey,
   fetchImpl = globalThis.fetch,
   now = () => new Date(),
+  onProgress = () => {},
 }) {
   const prepared = await prepareRequest({ prompt, settings, imagePaths, maskPath })
   if (!String(apiKey || '').trim()) {
@@ -356,6 +357,7 @@ async function executeImageEdit({
   const timeout = setTimeout(() => controller.abort(), prepared.settings.timeout_ms)
   try {
     transportCalls += 1
+    onProgress('requesting')
     response = await fetchImpl(ENDPOINT, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -390,6 +392,7 @@ async function executeImageEdit({
   const providerRequestId = safeRequestId(response.headers.get('x-request-id'))
   let bodyText
   try {
+    onProgress('receiving')
     bodyText = await response.text()
   } catch (cause) {
     if (!response.ok) bodyText = ''
@@ -520,6 +523,7 @@ async function executeImageEdit({
     }
 
     try {
+      onProgress('saving')
       await persistImages()
     } catch (cause) {
       if (cause?.code !== 'ENOENT') throw localArtifactWriteError(cause)

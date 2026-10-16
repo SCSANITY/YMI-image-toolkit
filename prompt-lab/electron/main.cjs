@@ -8,7 +8,7 @@ const { publicCapabilities } = require('../core/contract.cjs')
 const { executeImageEdit, inspectImage, prepareRequest, publicRequest } = require('../core/runner.cjs')
 const { createApiKeyStore } = require('./apiKeyStore.cjs')
 const { createHistoryStore } = require('./historyStore.cjs')
-const { createExecuteHandler, createPreviewDataUrl, errorResult } = require('./promptLabHandlers.cjs')
+const { createExecuteHandler, createPreviewDataUrl, errorResult, readOriginalImage } = require('./promptLabHandlers.cjs')
 const { createRunRegistry } = require('./runRegistry.cjs')
 
 const isDev = !app.isPackaged
@@ -211,6 +211,9 @@ function registerIpcHandlers() {
     prepareRequest,
     executeImageEdit,
     getApiKey: loadApiKey,
+    reportProgress: (event, phase) => {
+      try { if (!event.sender.isDestroyed()) event.sender.send('prompt-lab:progress', phase) } catch { /* UI progress cannot change a paid request outcome. */ }
+    },
     getEvidenceRoot: () => path.join(app.getPath('userData'), 'prompt-lab-run-records'),
     registerRunDirectory: runRegistry.register,
     recordCompletedRun: (result) => historyStore.recordCompletedRun(result),
@@ -240,6 +243,11 @@ function registerIpcHandlers() {
   ipcMain.handle('prompt-lab:list-history', async (event) => {
     assertTrustedEvent(event)
     return historyStore.listHistory()
+  })
+
+  ipcMain.handle('prompt-lab:view-original', async (event, runId, file) => {
+    assertTrustedEvent(event)
+    return readOriginalImage(runRegistry, runId, file)
   })
 
   ipcMain.handle('prompt-lab:export-config', async (event, config) => {

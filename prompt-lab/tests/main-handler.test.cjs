@@ -12,7 +12,24 @@ const {
   createExecuteHandler,
   createPreviewDataUrl,
   errorResult,
+  readOriginalImage,
 } = require('../electron/promptLabHandlers.cjs')
+const { createRunRegistry } = require('../electron/runRegistry.cjs')
+
+test('original viewer preserves exact bytes and rejects unknown runs and traversal', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ymi-original-viewer-'))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const bytes = await sharp({ create: { width: 1024, height: 800, channels: 3, background: '#123456' } }).png().toBuffer()
+  await fs.writeFile(path.join(root, 'output-01.png'), bytes)
+  const registry = createRunRegistry()
+  registry.register(root, 'test-run')
+  const image = await readOriginalImage(registry, 'test-run', 'output-01.png')
+  assert.deepEqual(Buffer.from(image.url.split(',')[1], 'base64'), bytes)
+  assert.deepEqual([image.width, image.height], [1024, 800])
+  await assert.rejects(readOriginalImage(registry, 'missing', 'output-01.png'))
+  await assert.rejects(readOriginalImage(registry, 'test-run', '../output-01.png'))
+  await assert.rejects(readOriginalImage(registry, 'test-run', 'request.json'))
+})
 
 function deferred() {
   let resolve
@@ -41,12 +58,15 @@ test('real execute handler atomically admits one overlapping call and one transp
   const confirmation = deferred()
   const transport = deferred()
   let transportCalls = 0
+  const phases = []
   const handler = createExecuteHandler({
+    reportProgress: (_event, phase) => phases.push(phase),
     prepareRequest: async () => ({ settings: { model: 'test-model' }, images: [] }),
     confirmRequest: async () => confirmation.promise,
     getApiKey: () => 'sk-test',
     getEvidenceRoot: () => path.join(os.tmpdir(), 'prompt-lab-evidence'),
-    executeImageEdit: async () => {
+    executeImageEdit: async ({ onProgress }) => {
+      onProgress('requesting')
       transportCalls += 1
       await transport.promise
       return {
@@ -69,6 +89,7 @@ test('real execute handler atomically admits one overlapping call and one transp
   transport.resolve()
   assert.equal((await first).ok, true)
   assert.equal(transportCalls, 1)
+  assert.deepEqual(phases, ['validating', 'confirming', 'requesting', 'previewing'])
 })
 
 test('a missing local preview does not turn a completed provider request into a second-request error', async () => {

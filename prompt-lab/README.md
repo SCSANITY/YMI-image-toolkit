@@ -47,6 +47,16 @@ Use **Validate / dry run** first. It validates the prompt, ordered images, mask
 and API controls but sends no request. **Send one paid request** opens a native
 confirmation showing model, size, quality, output count and the no-retry rule.
 
+**View original** opens the saved output bytes in a modal viewer with Fit, 100%,
+zoom controls and drag-to-pan. Escape closes it. Originals must be readable
+PNG/JPEG/WebP files under 50 MB in the registered run folder.
+**Reuse prompt & settings** loads a history record into the composer; current
+input images, mask and destination remain unchanged and must be checked before
+sending. Missing legacy parameters use the current defaults.
+The activity display distinguishes validation, confirmation, provider wait,
+response download, saving and preview preparation. Elapsed time includes local
+processing and time spent confirming; it is not a provider-only latency metric.
+
 ## Supported Images Edit controls
 
 - 1–16 ordered PNG, JPEG or WebP inputs;

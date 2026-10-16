@@ -52,7 +52,25 @@ h1 { margin: 3px 0 0; font-size: 28px; line-height: 1; letter-spacing: -.035em; 
 .creative-workspace { display: grid; grid-template-columns: 266px minmax(510px, 1fr) 314px; gap: 14px; align-items: start; }
 .workspace-surface { border: 1px solid rgba(215,194,175,.82); border-radius: 17px; background: var(--surface); box-shadow: var(--shadow); }
 .asset-sidebar, .control-sidebar { height: calc(100vh - 126px); min-height: 650px; padding: 17px; overflow: auto; scrollbar-width: thin; scrollbar-color: #d8c2b2 transparent; }
-.studio-column { min-width: 0; height: calc(100vh - 126px); min-height: 650px; display: grid; grid-template-rows: minmax(520px, 1fr) auto; gap: 14px; }
+.studio-column { min-width: 0; height: calc(100vh - 126px); min-height: 650px; display: grid; grid-template-rows: minmax(570px, 1fr) auto; gap: 14px; }
+
+.result-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+.result-actions:empty { display: none; }
+.result-actions button { font-size: 11px; min-height: 30px; }
+.image-viewer { width: 94vw; height: 92vh; max-width: none; max-height: none; padding: 16px; border: 1px solid var(--line); border-radius: 16px; color: var(--text); background: var(--surface-strong); }
+.image-viewer[open] { display: flex; flex-direction: column; }
+.image-viewer::backdrop { background: rgba(25,20,18,.7); }
+.viewer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.viewer-toolbar strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-toolbar .row-actions { flex-shrink: 0; }
+.viewer-toolbar span { width: 55px; text-align: center; }
+.viewer-viewport { flex: 1; min-height: 0; overflow: auto; background: #e7dfd7; cursor: grab; touch-action: none; }
+.viewer-viewport:active { cursor: grabbing; }
+.viewer-image-space { min-width: 100%; min-height: 100%; width: max-content; display: grid; place-items: center; padding: 16px; }
+.viewer-image-space.fit { width: 100%; height: 100%; }
+.viewer-image-space img { display: block; max-width: none; user-select: none; }
+.viewer-image-space.fit img { width: 100%; height: 100%; min-height: 0; object-fit: contain; }
+.viewer-help { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 .canvas-surface { min-height: 0; padding: 17px; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #d8c2b2 transparent; }
 .canvas-surface > * { flex-shrink: 0; }
 .prompt-composer { padding: 16px; }

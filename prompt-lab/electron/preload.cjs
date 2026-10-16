@@ -17,6 +17,12 @@ contextBridge.exposeInMainWorld('promptLab', {
   validate: (request) => ipcRenderer.invoke('prompt-lab:validate', request),
   execute: (request) => ipcRenderer.invoke('prompt-lab:execute', request),
   listHistory: () => ipcRenderer.invoke('prompt-lab:list-history'),
+  viewOriginal: (runId, file) => ipcRenderer.invoke('prompt-lab:view-original', runId, file),
+  onProgress: (callback) => {
+    const listener = (_event, phase) => callback(phase)
+    ipcRenderer.on('prompt-lab:progress', listener)
+    return () => ipcRenderer.removeListener('prompt-lab:progress', listener)
+  },
   exportConfig: (config) => ipcRenderer.invoke('prompt-lab:export-config', config),
   importConfig: () => ipcRenderer.invoke('prompt-lab:import-config'),
   openRunFolder: (runId) => ipcRenderer.invoke('prompt-lab:open-run-folder', runId),
